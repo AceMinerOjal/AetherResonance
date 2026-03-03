@@ -19,26 +19,24 @@ public class LightningConductive extends StatusEffect {
 
   @Override
   protected void onTick() {
-    if (target == null)
+    if (target == null) {
       return;
+    }
     target.applyDamage(damagePerTick);
 
-    try {
-      List<Entity> nearby = target.getNearbyEntities(chainRadius);
-      if (nearby != null && !nearby.isEmpty()) {
-        for (Entity e : nearby) {
-          if (e == null)
-            continue;
-          if (e == target)
-            continue;
-          if (e instanceof EffectTarget et) {
-            double chained = damagePerTick * chainDamageMultiplier;
-            et.applyDamage(chained);
-          }
-        }
+    List<Entity> nearby = target.getNearbyEntities(chainRadius);
+    if (nearby == null || nearby.isEmpty()) {
+      return;
+    }
+
+    for (Entity e : nearby) {
+      if (e == null || e == target) {
+        continue;
       }
-    } catch (Throwable t) {
-      t.printStackTrace();
+      if (e instanceof EffectTarget et) {
+        double chained = damagePerTick * chainDamageMultiplier;
+        et.applyDamage(chained);
+      }
     }
   }
 

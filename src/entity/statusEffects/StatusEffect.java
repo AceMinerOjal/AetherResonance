@@ -45,8 +45,8 @@ public abstract class StatusEffect extends Timer {
         tickAccumulator -= tickInterval;
         try {
           onTick();
-        } catch (Throwable t) {
-          t.printStackTrace();
+        } catch (Exception ex) {
+          System.err.println("Status effect tick failed for " + name + ": " + ex.getMessage());
         }
       }
     }

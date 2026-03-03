@@ -459,7 +459,4 @@ public abstract class Player extends Entity implements EffectTarget {
     ap.scale(level);
     defence.scale(level);
   }
-
-  protected void lastItem() {
-  }
 }

@@ -29,10 +29,6 @@ public class Tank extends Player {
     }
   }
 
-  @Override
-  protected void lastItem() {
-  }
-
   private void shield() {
     if (!spendMana(5)) {
       return;

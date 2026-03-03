@@ -29,10 +29,6 @@ public class Mage extends Player {
     }
   }
 
-  @Override
-  protected void lastItem() {
-  }
-
   // Damaging skills have a chance for a character's element's status effect
   private void ball() {
     if (!spendMana(6)) {

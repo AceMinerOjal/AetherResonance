@@ -12,6 +12,7 @@ import java.util.List;
 import javax.swing.JPanel;
 
 import entity.Player;
+import entity.Enemy;
 import entity.player.classes.Mage;
 import entity.player.classes.Priest;
 import entity.player.classes.Tank;
@@ -84,7 +85,9 @@ public class GamePanel extends JPanel implements Runnable {
   private Thread gameThread;
   private final KeyHandler kh = new KeyHandler();
   private final List<Player> players = new ArrayList<>();
+  private final List<Enemy> enemies = new ArrayList<>();
   private final boolean[] joinedSlots = new boolean[MAX_PLAYERS];
+  private String enemyMapId;
 
   private final LevelManager levelManager = new LevelManager();
   private final SaveStateManager saveStateManager = new SaveStateManager();
@@ -144,30 +147,31 @@ public class GamePanel extends JPanel implements Runnable {
   public void run() {
     final double drawInterval = 1_000_000_000.0 / UPS;
 
-    long tLastTimeOnDBZ = System.nanoTime();
-    double deltaPowerUp = 0.0;
+    long lastTickNs = System.nanoTime();
+    double pendingFrames = 0.0;
     double dtPerFrame = 1.0 / UPS;
 
     while (gameThread != null) {
-      long tCurrentTime = System.nanoTime();
-      long elapsedTimeSinceLastSaga = tCurrentTime - tLastTimeOnDBZ;
-      tLastTimeOnDBZ = tCurrentTime;
+      long currentNs = System.nanoTime();
+      long elapsedNs = currentNs - lastTickNs;
+      lastTickNs = currentNs;
 
-      deltaPowerUp += elapsedTimeSinceLastSaga / drawInterval;
+      pendingFrames += elapsedNs / drawInterval;
 
-      while (deltaPowerUp >= 1) {
+      while (pendingFrames >= 1) {
         update(dtPerFrame);
-        deltaPowerUp--;
+        pendingFrames--;
       }
 
       repaint();
 
-      long napTimeForThread = (long) ((drawInterval - elapsedTimeSinceLastSaga) / 1_000_000);
-      if (napTimeForThread > 0) {
+      long sleepMs = (long) ((drawInterval - elapsedNs) / 1_000_000);
+      if (sleepMs > 0) {
         try {
-          Thread.sleep(napTimeForThread);
+          Thread.sleep(sleepMs);
         } catch (InterruptedException e) {
-          e.printStackTrace();
+          Thread.currentThread().interrupt();
+          break;
         }
       }
     }
@@ -209,6 +213,7 @@ public class GamePanel extends JPanel implements Runnable {
 
   private void simulateWorld(double dt) {
     TiledMap map = levelManager.getCurrentMap();
+    ensureEnemiesForCurrentMap(map);
     refreshFriendlyFireFlags(map);
 
     for (Player player : players) {
@@ -231,12 +236,47 @@ public class GamePanel extends JPanel implements Runnable {
     for (Player player : players) {
       if (levelManager.updatePortals(player, players)) {
         map = levelManager.getCurrentMap();
+        ensureEnemiesForCurrentMap(map);
         refreshFriendlyFireFlags(map);
         break;
       }
     }
 
+    for (Enemy enemy : enemies) {
+      double oldX = enemy.getX();
+      double oldY = enemy.getY();
+      enemy.update(dt, map, players);
+      if (map != null && map.collides(enemy.getHitbox())) {
+        enemy.setWorldPosition(oldX, oldY);
+      }
+    }
+
     refreshFriendlyFireFlags(map);
+  }
+
+  private void ensureEnemiesForCurrentMap(TiledMap map) {
+    String currentMapId = levelManager.getCurrentMapId();
+    if (map == null || currentMapId == null || currentMapId.isBlank()) {
+      enemies.clear();
+      enemyMapId = null;
+      return;
+    }
+    if (currentMapId.equals(enemyMapId) && !enemies.isEmpty()) {
+      return;
+    }
+
+    enemies.clear();
+    enemyMapId = currentMapId;
+
+    List<int[]> spawnTiles = map.getEnemySpawnTilesByVariant();
+    for (int[] spawn : spawnTiles) {
+      int tileX = spawn[0];
+      int tileY = spawn[1];
+      int variant = spawn[2];
+      double spawnX = tileX * map.getTileWidth() + (map.getTileWidth() * 0.5);
+      double spawnY = tileY * map.getTileHeight() + (map.getTileHeight() * 0.5);
+      enemies.add(new Enemy(spawnX, spawnY, variant));
+    }
   }
 
   private void refreshFriendlyFireFlags(TiledMap map) {
@@ -266,6 +306,11 @@ public class GamePanel extends JPanel implements Runnable {
         int slot = slotForClassName(player.getClass().getName());
         g2.setColor(PLAYER_COLORS[Math.max(0, Math.min(PLAYER_COLORS.length - 1, slot))]);
         Hitbox hb = player.getHitbox();
+        g2.fillRect((int) hb.getLeft(), (int) hb.getTop(), (int) hb.getWidth(), (int) hb.getHeight());
+      }
+      g2.setColor(new Color(210, 60, 60));
+      for (Enemy enemy : enemies) {
+        Hitbox hb = enemy.getHitbox();
         g2.fillRect((int) hb.getLeft(), (int) hb.getTop(), (int) hb.getWidth(), (int) hb.getHeight());
       }
     }

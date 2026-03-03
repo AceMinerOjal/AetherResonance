@@ -1,102 +1,123 @@
 # Shardbound
 
-Shardbound is a top-down party RPG in Java with:
+Shardbound is a top-down Java party RPG with:
 
-- up to 4 players (one per class),
-- Tiled JSON world maps with portals,
-- local play and network play (LAN + TCP),
-- quicksave support.
+- up to 4 class slots (Mage, Warrior, Tank, Priest)
+- Tiled JSON maps with collision and portals
+- save/load quickstates
+- LAN/TCP host-client networking
+- elemental skill/status system
+- map-aware enemies with 10-tile sensing and pathfinding
 
-## Maps (Tiled)
+## Running
 
-Expected map files in `res/maps/`:
+Build and run with your normal Java/Maven workflow.
 
-- `world.json`
-- `cave.json`
-- `dungeon.json`
+Network mode is configured with JVM args:
 
-### Collision
+- local (default): `--mode=local`
+- LAN host: `--mode=lan-host --port=7777`
+- LAN client: `--mode=lan-client --host=HOST_IP --port=7777`
+- TCP host: `--mode=tcp-host --port=7777`
+- TCP client: `--mode=tcp-client --host=HOST_IP --port=7777`
 
-- Use a tile layer named `collision`, or set layer property `collidable=true`.
-- Set tile property `solid=true` on blocking tiles in the tileset.
+Networking model:
 
-### Portals
-
-- Use an object layer named `portals`.
-- Create rectangle objects and add `targetMap`, `targetX`, and `targetY` properties.
-- `targetMap`: destination map id (`world`, `cave`, `dungeon`, or any registered id).
-- `targetX`: destination x in pixels.
-- `targetY`: destination y in pixels.
-
-### Friendly fire zones
-
-- Friendly fire is off by default.
-- To enable PvP in a specific area, add an object layer named `friendly_fire` (or `pvp`).
-- Add rectangle objects for each zone where players are allowed to affect each other with status effects.
+- host is authoritative
+- clients send inputs
+- host publishes snapshots
 
 ## Controls
 
-Join class slots:
+Join slots:
 
 - `F1` Mage
 - `F2` Warrior
 - `F3` Tank
 - `F4` Priest
 
-Per-class controls:
+Per-slot controls:
 
-- Mage: move `WASD`, skills `1 2 3 4`, modifier `Shift`
-- Warrior: move arrow keys, skills numpad `1 2 3 4`, modifier `Enter`
-- Tank: move `I J K L`, skills `Z X C V`, modifier `O`
-- Priest: move `T F G H`, skills `R U B N`, modifier `Y`
+- Mage: move `W A S D`, skills `1 2 3 4`, item modifier `Shift`
+- Warrior: move arrows, skills `NumPad1-4`, item modifier `Enter`
+- Tank: move `I J K L`, skills `Z X C V`, item modifier `O`
+- Priest: move `T F G H`, skills `R U B N`, item modifier `Y`
 
-### Signature elements
+Save state:
 
-- Every class has a default signature element:
-- Mage = `FIRE`
-- Warrior = `LIGHTNING`
-- Tank = `EARTH`
-- Priest = `ICE`
-- Skill type is always the current signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`), and that element is the single source of truth for the applied status effect.
-- Item controls:
-- `modifier + skill1`: switch selected inventory item
-- `modifier + skill2`: use selected inventory item
-- Inventory items:
-- `ELEMENT_TUNER`: cycles skill/signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`)
-- `STATUS_TUNER`: cycles status effects (`BURN`, `FREEZE`, `CONDUCTIVE`, `FRACTURE`) and syncs the matching element type
-- `ATTRIBUTE_TUNER`: cycles editable attribute (`MAX_HP`, `HP_REGEN`, `MAX_MANA`, `MANA_REGEN`, `AP`, `DEFENCE`)
-- Offensive skills apply the status effect that matches the active element type.
+- save quickstate: `F5`
+- load quickstate: `F9`
+- file: `saves/quicksave.properties`
 
-### Runtime attribute editing
+## Classes, Elements, and Items
 
-- Any class can modify its attributes at runtime via item inputs:
+Class defaults:
+
+- Mage -> `FIRE`
+- Warrior -> `LIGHTNING`
+- Tank -> `EARTH`
+- Priest -> `ICE`
+
+Element/status behavior:
+
+- active skill type is the current signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`)
+- applied status effect is derived from the active element
+- all classes can cycle elements at runtime
+
+Inventory item controls:
+
+- `modifier + skill1`: cycle selected item
+- `modifier + skill2`: use selected item
 - `modifier + skill3`: increase selected attribute
 - `modifier + skill4`: decrease selected attribute
-- Selected attribute is cycled by using `ATTRIBUTE_TUNER`.
-- Editable attributes: `MAX_HP`, `HP_REGEN`, `MAX_MANA`, `MANA_REGEN`, `AP`, `DEFENCE`
 
-## Save States
+Items:
 
-- Save quickstate: `F5`
-- Load quickstate: `F9`
-- File path: `saves/quicksave.properties`
+- `ELEMENT_TUNER`: cycles active element
+- `STATUS_TUNER`: cycles status (and syncs matching element)
+- `ATTRIBUTE_TUNER`: cycles editable attribute
 
-## Networking
+Editable attributes:
 
-Run with JVM args:
+- `MAX_HP`
+- `HP_REGEN`
+- `MAX_MANA`
+- `MANA_REGEN`
+- `AP`
+- `DEFENCE`
 
-- Local (default): `--mode=local`
-- LAN host: `--mode=lan-host --port=7777`
-- LAN client: `--mode=lan-client --host=HOST_IP --port=7777`
-- TCP host: `--mode=tcp-host --port=7777`
-- TCP client: `--mode=tcp-client --host=HOST_IP --port=7777`
+Leveling:
 
-Notes:
+- starting level is `0`
+- max level is `128`
 
-- Host is authoritative.
-- Clients send input; host sends snapshots.
-- Slot/class mapping is fixed:
-- Slot 0 Mage (host local)
-- Slot 1 Warrior
-- Slot 2 Tank
-- Slot 3 Priest
+## Map Authoring (Tiled)
+
+Maps are loaded from classpath resources at `maps/<id>.json`.
+Current default IDs are: `world`, `cave`, `dungeon`.
+
+Collision:
+
+- tile layer name `collision`, or layer property `collidable=true`
+- solid tiles are marked in tileset tile properties with `solid=true`
+
+Portals:
+
+- object layer name `portals`
+- each rectangle object supports:
+- `targetMap` (destination map id)
+- `targetX` (destination x in pixels)
+- `targetY` (destination y in pixels)
+
+Friendly fire zones:
+
+- friendly fire is OFF by default
+- enable in specific areas using object layer `friendly_fire` (or `pvp`)
+- add rectangle objects to define PvP-active regions
+
+Enemy variants:
+
+- enemies sense players from up to 10 tiles away
+- enemies spawn from walkable tile variants
+- each enemy is locked to its spawn variant
+- enemies pathfind only through tiles of their own variant

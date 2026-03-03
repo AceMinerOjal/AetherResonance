@@ -29,11 +29,6 @@ public class Warrior extends Player {
     }
   }
 
-  @Override
-  protected void lastItem() {
-  }
-
-  // Damaging small have a chance for a character's element's status effect
   private void stab() {
     if (!spendMana(5)) {
       return;

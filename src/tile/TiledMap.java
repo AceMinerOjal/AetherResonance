@@ -3,8 +3,10 @@ package tile;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import lib.Hitbox;
@@ -159,6 +161,22 @@ public class TiledMap {
     return height * tileHeight;
   }
 
+  public int getWidthTiles() {
+    return width;
+  }
+
+  public int getHeightTiles() {
+    return height;
+  }
+
+  public int getTileWidth() {
+    return tileWidth;
+  }
+
+  public int getTileHeight() {
+    return tileHeight;
+  }
+
   public void draw(Graphics2D g2) {
     for (Layer layer : layers) {
       if (!layer.visible) {
@@ -210,6 +228,61 @@ public class TiledMap {
     }
 
     return false;
+  }
+
+  public boolean isTileBlocked(int tileX, int tileY) {
+    if (tileX < 0 || tileY < 0 || tileX >= width || tileY >= height) {
+      return true;
+    }
+
+    for (Layer layer : layers) {
+      if (!layer.collidable) {
+        continue;
+      }
+      int gid = layer.data[tileY * width + tileX];
+      if (gid == 0) {
+        continue;
+      }
+      if (isSolidGid(gid)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public int getVariantAtTile(int tileX, int tileY) {
+    if (tileX < 0 || tileY < 0 || tileX >= width || tileY >= height) {
+      return -1;
+    }
+
+    int variant = -1;
+    for (Layer layer : layers) {
+      if (layer.collidable || !layer.visible) {
+        continue;
+      }
+      int gid = layer.data[tileY * width + tileX];
+      if (gid != 0) {
+        variant = gid;
+      }
+    }
+    return variant;
+  }
+
+  public List<int[]> getEnemySpawnTilesByVariant() {
+    Map<Integer, int[]> firstTileByVariant = new LinkedHashMap<>();
+    for (int tileY = 0; tileY < height; tileY++) {
+      for (int tileX = 0; tileX < width; tileX++) {
+        if (isTileBlocked(tileX, tileY)) {
+          continue;
+        }
+        int variant = getVariantAtTile(tileX, tileY);
+        if (variant < 0 || firstTileByVariant.containsKey(variant)) {
+          continue;
+        }
+        firstTileByVariant.put(variant, new int[] { tileX, tileY, variant });
+      }
+    }
+    return new ArrayList<>(firstTileByVariant.values());
   }
 
   private boolean isSolidGid(int gid) {

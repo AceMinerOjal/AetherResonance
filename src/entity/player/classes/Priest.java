@@ -29,10 +29,6 @@ public class Priest extends Player {
     }
   }
 
-  @Override
-  protected void lastItem() {
-  }
-
   private void cleanse() {
     if (!spendMana(6)) {
       return;
