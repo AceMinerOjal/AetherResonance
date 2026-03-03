@@ -54,6 +54,7 @@ public final class TiledMapLoader {
         map.addLayer(new TiledMap.Layer(name, data, visible, collidable));
       } else if ("objectgroup".equals(type)) {
         parsePortals(layerObject, map);
+        parseFriendlyFireZones(layerObject, map);
       }
     }
 
@@ -150,6 +151,30 @@ public final class TiledMapLoader {
         continue;
       }
       map.addPortal(new TiledMap.Portal(x, y, width, height, targetMap, targetX, targetY));
+    }
+  }
+
+  private static void parseFriendlyFireZones(Map<String, Object> layerObject, TiledMap map) {
+    String name = asStringOrDefault(layerObject.get("name"), "");
+    if (!"friendly_fire".equalsIgnoreCase(name) && !"pvp".equalsIgnoreCase(name)) {
+      return;
+    }
+
+    Object objectsObj = layerObject.get("objects");
+    if (!(objectsObj instanceof List<?> objects)) {
+      return;
+    }
+
+    for (Object objectObj : objects) {
+      Map<String, Object> object = asObject(objectObj, "layers[].objects[]");
+      double x = asDouble(object.get("x"), "layers[].objects[].x");
+      double y = asDouble(object.get("y"), "layers[].objects[].y");
+      double width = asDoubleOrDefault(object.get("width"), 0);
+      double height = asDoubleOrDefault(object.get("height"), 0);
+      if (width <= 0 || height <= 0) {
+        continue;
+      }
+      map.addFriendlyFireZone(new TiledMap.FriendlyFireZone(x, y, width, height));
     }
   }
 

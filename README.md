@@ -28,6 +28,12 @@ Expected map files in `res/maps/`:
 - `targetX`: destination x in pixels.
 - `targetY`: destination y in pixels.
 
+### Friendly fire zones
+
+- Friendly fire is off by default.
+- To enable PvP in a specific area, add an object layer named `friendly_fire` (or `pvp`).
+- Add rectangle objects for each zone where players are allowed to affect each other with status effects.
+
 ## Controls
 
 Join class slots:
@@ -51,7 +57,7 @@ Per-class controls:
 - Warrior = `LIGHTNING`
 - Tank = `EARTH`
 - Priest = `ICE`
-- Skill type is always the current signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`), and any class can switch it at runtime via items.
+- Skill type is always the current signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`), and that element is the single source of truth for the applied status effect.
 - Item controls:
 - `modifier + skill1`: switch selected inventory item
 - `modifier + skill2`: use selected inventory item

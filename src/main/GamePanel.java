@@ -209,6 +209,7 @@ public class GamePanel extends JPanel implements Runnable {
 
   private void simulateWorld(double dt) {
     TiledMap map = levelManager.getCurrentMap();
+    refreshFriendlyFireFlags(map);
 
     for (Player player : players) {
       double oldX = player.getX();
@@ -229,8 +230,19 @@ public class GamePanel extends JPanel implements Runnable {
 
     for (Player player : players) {
       if (levelManager.updatePortals(player, players)) {
+        map = levelManager.getCurrentMap();
+        refreshFriendlyFireFlags(map);
         break;
       }
+    }
+
+    refreshFriendlyFireFlags(map);
+  }
+
+  private void refreshFriendlyFireFlags(TiledMap map) {
+    for (Player player : players) {
+      boolean enabled = map != null && map.isFriendlyFireEnabled(player.getHitbox());
+      player.setFriendlyFireEnabled(enabled);
     }
   }
 

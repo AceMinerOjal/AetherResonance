@@ -40,6 +40,7 @@ public abstract class Player extends Entity implements EffectTarget {
   private PlayerAttribute editableAttribute = PlayerAttribute.MAX_HP;
   private double damageTakenMultiplier = 1.0;
   private boolean frozen;
+  private boolean friendlyFireEnabled;
 
   public Player(double x, double y, KeyHandler kh, PlayerControls controls, SignatureElement defaultElement,
       StatusEffectType defaultStatusEffect) {
@@ -105,7 +106,7 @@ public abstract class Player extends Entity implements EffectTarget {
     return new PlayerSaveState(
         getClass().getName(),
         signatureElement.name(),
-        statusEffectType.name(),
+        statusForElement(signatureElement).name(),
         x,
         y,
         hp.get(),
@@ -121,23 +122,12 @@ public abstract class Player extends Entity implements EffectTarget {
       return false;
     }
 
-    boolean loadedElement = false;
     try {
       signatureElement = SignatureElement.valueOf(state.signatureElement());
-      loadedElement = true;
     } catch (Exception ignored) {
       signatureElement = SignatureElement.FIRE;
     }
-    try {
-      statusEffectType = StatusEffectType.valueOf(state.statusEffectType());
-    } catch (Exception ignored) {
-      statusEffectType = statusForElement(signatureElement);
-    }
-    if (loadedElement) {
-      statusEffectType = statusForElement(signatureElement);
-    } else {
-      signatureElement = elementForStatus(statusEffectType);
-    }
+    statusEffectType = statusForElement(signatureElement);
 
     setPosition(state.x(), state.y());
     level = new Level(state.level(), state.exp());
@@ -282,6 +272,9 @@ public abstract class Player extends Entity implements EffectTarget {
     if (target == null || target == this) {
       return;
     }
+    if (!friendlyFireEnabled || !target.friendlyFireEnabled) {
+      return;
+    }
 
     // Offensive skills always inherit the active elemental skill type.
     StatusEffect effect = switch (statusForElement(signatureElement)) {
@@ -296,6 +289,9 @@ public abstract class Player extends Entity implements EffectTarget {
   }
 
   protected void inflictConfiguredStatusEffectNearby(double radius, double power) {
+    if (!friendlyFireEnabled) {
+      return;
+    }
     for (Player other : party) {
       if (other == null || other == this) {
         continue;
@@ -331,6 +327,10 @@ public abstract class Player extends Entity implements EffectTarget {
     return signatureElement;
   }
 
+  public void setFriendlyFireEnabled(boolean friendlyFireEnabled) {
+    this.friendlyFireEnabled = friendlyFireEnabled;
+  }
+
   protected void cycleSignatureElement() {
     signatureElement = signatureElement.next();
     statusEffectType = statusForElement(signatureElement);
@@ -338,9 +338,9 @@ public abstract class Player extends Entity implements EffectTarget {
   }
 
   protected void cycleStatusEffectType() {
-    statusEffectType = statusEffectType.next();
-    signatureElement = elementForStatus(statusEffectType);
-    System.out.println(getClass().getSimpleName() + " status -> " + statusEffectType);
+    signatureElement = signatureElement.next();
+    statusEffectType = statusForElement(signatureElement);
+    System.out.println(getClass().getSimpleName() + " status -> " + statusEffectType + " (element " + signatureElement + ")");
   }
 
   protected void cycleEditableAttribute() {
@@ -395,15 +395,6 @@ public abstract class Player extends Entity implements EffectTarget {
       case ICE -> StatusEffectType.FREEZE;
       case LIGHTNING -> StatusEffectType.CONDUCTIVE;
       case EARTH -> StatusEffectType.FRACTURE;
-    };
-  }
-
-  private SignatureElement elementForStatus(StatusEffectType status) {
-    return switch (status) {
-      case BURN -> SignatureElement.FIRE;
-      case FREEZE -> SignatureElement.ICE;
-      case CONDUCTIVE -> SignatureElement.LIGHTNING;
-      case FRACTURE -> SignatureElement.EARTH;
     };
   }
 

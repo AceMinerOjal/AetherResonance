@@ -50,6 +50,27 @@ public class TiledMap {
     }
   }
 
+  public static final class FriendlyFireZone {
+    private final double x;
+    private final double y;
+    private final double width;
+    private final double height;
+
+    public FriendlyFireZone(double x, double y, double width, double height) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+
+    public boolean intersects(Hitbox hitbox) {
+      return hitbox.getLeft() < x + width
+          && hitbox.getRight() > x
+          && hitbox.getTop() < y + height
+          && hitbox.getBottom() > y;
+    }
+  }
+
   public static final class Layer {
     private final String name;
     private final int[] data;
@@ -105,6 +126,7 @@ public class TiledMap {
   private final List<Layer> layers = new ArrayList<>();
   private final List<Tileset> tilesets = new ArrayList<>();
   private final List<Portal> portals = new ArrayList<>();
+  private final List<FriendlyFireZone> friendlyFireZones = new ArrayList<>();
 
   public TiledMap(int width, int height, int tileWidth, int tileHeight) {
     this.width = width;
@@ -123,6 +145,10 @@ public class TiledMap {
 
   public void addPortal(Portal portal) {
     portals.add(portal);
+  }
+
+  public void addFriendlyFireZone(FriendlyFireZone zone) {
+    friendlyFireZones.add(zone);
   }
 
   public int getPixelWidth() {
@@ -149,6 +175,15 @@ public class TiledMap {
       }
     }
     return null;
+  }
+
+  public boolean isFriendlyFireEnabled(Hitbox hitbox) {
+    for (FriendlyFireZone zone : friendlyFireZones) {
+      if (zone.intersects(hitbox)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public boolean collides(Hitbox hitbox) {
