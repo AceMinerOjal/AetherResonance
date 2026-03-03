@@ -3,15 +3,15 @@ package entity.player.classes;
 import main.KeyHandler;
 import main.PlayerControls;
 
+import entity.player.Health;
 import entity.player.Player;
 import entity.player.SignatureElement;
-import entity.player.StatusEffectType;
-import entity.player.stats.*;
-import entity.player.Health;
+import entity.player.stats.Dialectics;
+import entity.player.stats.Mana;
 
 public class Warrior extends Player {
   public Warrior(double x, double y, KeyHandler kh, PlayerControls controls) {
-    super(x, y, kh, controls, SignatureElement.LIGHTNING, StatusEffectType.CONDUCTIVE);
+    super(x, y, kh, controls, SignatureElement.LIGHTNING);
 
     this.hp = new Health(50, 50, 0.5);
     this.mana = new Mana(20, 20, 0.1);

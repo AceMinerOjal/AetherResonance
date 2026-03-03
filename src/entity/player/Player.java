@@ -36,21 +36,18 @@ public abstract class Player extends Entity implements EffectTarget {
   private InventoryItem selectedInventoryItem = InventoryItem.STATUS_TUNER;
   private List<Player> party = Collections.emptyList();
   private SignatureElement signatureElement;
-  private StatusEffectType statusEffectType;
   private PlayerAttribute editableAttribute = PlayerAttribute.MAX_HP;
   private double damageTakenMultiplier = 1.0;
   private boolean frozen;
   private boolean friendlyFireEnabled;
 
-  public Player(double x, double y, KeyHandler kh, PlayerControls controls, SignatureElement defaultElement,
-      StatusEffectType defaultStatusEffect) {
+  public Player(double x, double y, KeyHandler kh, PlayerControls controls, SignatureElement defaultElement) {
     setPosition(x, y);
     // Keep feet/body collision tighter than full 32x32 sprite frame.
     setHitbox(20, 24, 6, 8);
     this.kh = kh;
     this.controls = controls;
     this.signatureElement = defaultElement;
-    this.statusEffectType = defaultStatusEffect;
     this.level = new Level();
   }
 
@@ -127,8 +124,6 @@ public abstract class Player extends Entity implements EffectTarget {
     } catch (Exception ignored) {
       signatureElement = SignatureElement.FIRE;
     }
-    statusEffectType = statusForElement(signatureElement);
-
     setPosition(state.x(), state.y());
     level = new Level(state.level(), state.exp());
 
@@ -333,14 +328,13 @@ public abstract class Player extends Entity implements EffectTarget {
 
   protected void cycleSignatureElement() {
     signatureElement = signatureElement.next();
-    statusEffectType = statusForElement(signatureElement);
     System.out.println(getClass().getSimpleName() + " element -> " + signatureElement);
   }
 
   protected void cycleStatusEffectType() {
     signatureElement = signatureElement.next();
-    statusEffectType = statusForElement(signatureElement);
-    System.out.println(getClass().getSimpleName() + " status -> " + statusEffectType + " (element " + signatureElement + ")");
+    System.out.println(getClass().getSimpleName() + " status -> " + statusForElement(signatureElement)
+        + " (element " + signatureElement + ")");
   }
 
   protected void cycleEditableAttribute() {
