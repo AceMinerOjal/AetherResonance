@@ -1,14 +1,17 @@
 package entity.player.classes;
 
 import main.KeyHandler;
+import main.PlayerControls;
 
 import entity.Player;
+import entity.SignatureElement;
+import entity.StatusEffectType;
 import entity.player.stats.*;
 import entity.Health;
 
 public class Tank extends Player {
-  public Tank(double x, double y, KeyHandler kh) {
-    super(x, y, kh);
+  public Tank(double x, double y, KeyHandler kh, PlayerControls controls) {
+    super(x, y, kh, controls, SignatureElement.EARTH, StatusEffectType.FRACTURE);
 
     this.hp = new Health(100, 100, 0.5);
     this.mana = new Mana(10, 10, 0.25);
@@ -31,42 +34,39 @@ public class Tank extends Player {
   }
 
   private void shield() {
-    double cost = 5;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(5)) {
       return;
     }
-    mana.spend(cost);
-    // Grants few seconds of immunity: TODO
+    applyTimedDefenceBonus(10, 4);
+    healSelf(5);
     setAnimation(AnimationState.ATTACK);
   }
 
   private void bash() {
-    double cost = 6;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(6)) {
       return;
     }
-    mana.spend(cost);
-    // Small distance dash with damage : TODO
+    dashForward(28);
+    applyTimedApBonus(3, 2);
+    inflictConfiguredStatusEffectNearby(60, ap.get());
     setAnimation(AnimationState.ATTACK);
   }
 
   private void wall() {
-    double cost = 10;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(10)) {
       return;
     }
-    mana.spend(cost);
-    // Create a defensive nova to grant immunity: TODO
+    applyTimedRegenBonus(1.5, 0.5, 6);
     setAnimation(AnimationState.ATTACK);
   }
 
   private void taunt() {
-    double cost = 4;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(4)) {
       return;
     }
-    mana.spend(cost);
-    // Forces enemies to target the tank: TODO
+    restoreMana(3);
+    applyTimedDefenceBonus(4, 3);
+    inflictConfiguredStatusEffectNearby(96, ap.get() * 0.9);
     setAnimation(AnimationState.ATTACK);
   }
 }

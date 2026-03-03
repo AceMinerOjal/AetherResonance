@@ -9,6 +9,7 @@ public class KeyHandler implements KeyListener {
   private static final int KEY_COUNT = 65536;
   private final boolean[] keyPressed = new boolean[KEY_COUNT];
   private final boolean[] keyTriggered = new boolean[KEY_COUNT];
+  private final boolean[] virtualPressed = new boolean[KEY_COUNT];
 
   @Override
   public void keyPressed(KeyEvent e) {
@@ -43,8 +44,18 @@ public class KeyHandler implements KeyListener {
 
   public boolean isDown(int keyCode) {
     if (keyCode >= 0 && keyCode < KEY_COUNT) {
-      return keyPressed[keyCode];
+      return keyPressed[keyCode] || virtualPressed[keyCode];
     }
     return false;
+  }
+
+  public void setVirtualDown(int keyCode, boolean down) {
+    if (keyCode < 0 || keyCode >= KEY_COUNT) {
+      return;
+    }
+    if (down && !virtualPressed[keyCode] && !keyPressed[keyCode]) {
+      keyTriggered[keyCode] = true;
+    }
+    virtualPressed[keyCode] = down;
   }
 }

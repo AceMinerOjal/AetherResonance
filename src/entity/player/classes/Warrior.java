@@ -1,14 +1,17 @@
 package entity.player.classes;
 
 import main.KeyHandler;
+import main.PlayerControls;
 
 import entity.Player;
+import entity.SignatureElement;
+import entity.StatusEffectType;
 import entity.player.stats.*;
 import entity.Health;
 
 public class Warrior extends Player {
-  public Warrior(double x, double y, KeyHandler kh) {
-    super(x, y, kh);
+  public Warrior(double x, double y, KeyHandler kh, PlayerControls controls) {
+    super(x, y, kh, controls, SignatureElement.LIGHTNING, StatusEffectType.CONDUCTIVE);
 
     this.hp = new Health(50, 50, 0.5);
     this.mana = new Mana(20, 20, 0.1);
@@ -32,48 +35,40 @@ public class Warrior extends Player {
 
   // Damaging small have a chance for a character's element's status effect
   private void stab() {
-    double cost = 5;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(5)) {
       return;
     }
-    mana.spend(cost);
-    // Primary attack: TODO
+    dashForward(18);
+    restoreMana(1);
+    inflictConfiguredStatusEffectNearby(56, ap.get());
     setAnimation(AnimationState.ATTACK);
   }
 
   private void dash() {
-    double cost = 8;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(8)) {
       return;
     }
-    mana.spend(cost);
-    double dist = 32; // WIP
-    switch (direction) {
-      case UP -> y -= dist;
-      case DOWN -> y += dist;
-      case LEFT -> x -= dist;
-      case RIGHT -> x += dist;
-    }
+    dashForward(48);
+    applyTimedDefenceBonus(2, 2.5);
     setAnimation(AnimationState.ATTACK);
   }
 
   private void stomp() {
-    double cost = 10;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(10)) {
       return;
     }
-    mana.spend(cost);
-    // AOE damage: TODO
+    applyTimedDefenceBonus(6, 4);
+    inflictConfiguredStatusEffectNearby(84, ap.get() * 1.1);
     setAnimation(AnimationState.ATTACK);
   }
 
   private void cleave() {
-    double cost = 12;
-    if (!mana.canSpend(cost)) {
+    if (!spendMana(12)) {
       return;
     }
-    mana.spend(cost);
-    // Big damage: TODO
+    healSelf(4 + ap.get() * 0.25);
+    applyTimedApBonus(4, 3);
+    inflictConfiguredStatusEffectNearby(80, ap.get() * 1.35);
     setAnimation(AnimationState.ATTACK);
   }
 }

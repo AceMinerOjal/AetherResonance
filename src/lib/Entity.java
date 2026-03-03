@@ -6,8 +6,12 @@ import java.util.Map;
 import java.awt.Graphics2D;
 
 public abstract class Entity {
+  protected static final int SPRITE_WIDTH = 32;
+  protected static final int SPRITE_HEIGHT = 32;
+
   protected double x, y;
   protected final double SPEED = 30;
+  protected final Hitbox hitbox;
 
   protected BufferedImage walkSheet;
   protected BufferedImage actionSheet;
@@ -30,6 +34,7 @@ public abstract class Entity {
   private final Map<AnimationState, Integer> animationFrames = new HashMap<>();
 
   public Entity() {
+    hitbox = new Hitbox(SPRITE_WIDTH, SPRITE_HEIGHT);
     animationFrames.put(AnimationState.IDLE, 1);
     animationFrames.put(AnimationState.WALK, 4);
     animationFrames.put(AnimationState.ATTACK, 3);
@@ -86,10 +91,10 @@ public abstract class Entity {
     direction = dir;
 
     switch (dir) {
-      case UP -> y -= SPEED * dt;
-      case DOWN -> y += SPEED * dt;
-      case LEFT -> x -= SPEED * dt;
-      case RIGHT -> x += SPEED * dt;
+      case UP -> setPosition(x, y - SPEED * dt);
+      case DOWN -> setPosition(x, y + SPEED * dt);
+      case LEFT -> setPosition(x - SPEED * dt, y);
+      case RIGHT -> setPosition(x + SPEED * dt, y);
     }
 
     setAnimation(AnimationState.WALK);
@@ -138,8 +143,8 @@ public abstract class Entity {
   }
 
   private void renderFrame(Graphics2D g, BufferedImage sheet, int row) {
-    int tw = 32;
-    int th = 32;
+    int tw = SPRITE_WIDTH;
+    int th = SPRITE_HEIGHT;
 
     int sx = getCurrentFrame() * tw;
     int sy = row * th;
@@ -151,5 +156,29 @@ public abstract class Entity {
       g.drawImage(sheet, (int) x, (int) y, (int) x + tw, (int) y + th,
           sx, sy, sx + tw, sy + th, null);
     }
+  }
+
+  protected void setPosition(double x, double y) {
+    this.x = x;
+    this.y = y;
+    hitbox.sync(x, y);
+  }
+
+  protected void setHitbox(double width, double height, double offsetX, double offsetY) {
+    hitbox.setSize(width, height);
+    hitbox.setOffset(offsetX, offsetY);
+    hitbox.sync(x, y);
+  }
+
+  public Hitbox getHitbox() {
+    return hitbox;
+  }
+
+  public double getX() {
+    return x;
+  }
+
+  public double getY() {
+    return y;
   }
 }

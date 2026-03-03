@@ -1,14 +1,17 @@
 package entity.player.classes;
 
 import main.KeyHandler;
+import main.PlayerControls;
 
 import entity.Player;
+import entity.SignatureElement;
+import entity.StatusEffectType;
 import entity.player.stats.*;
 import entity.Health;
 
 public class Priest extends Player {
-  public Priest(double x, double y, KeyHandler kh) {
-    super(x, y, kh);
+  public Priest(double x, double y, KeyHandler kh, PlayerControls controls) {
+    super(x, y, kh, controls, SignatureElement.ICE, StatusEffectType.FREEZE);
 
     this.hp = new Health(50, 50, 0.5);
     this.mana = new Mana(20, 20, 0.2);
@@ -19,7 +22,7 @@ public class Priest extends Player {
   @Override
   protected void performSkill(int num) {
     switch (num) {
-      case 0 -> clense();
+      case 0 -> cleanse();
       case 1 -> levitate();
       case 2 -> holyNova();
       case 3 -> divineIntervention();
@@ -30,47 +33,43 @@ public class Priest extends Player {
   protected void lastItem() {
   }
 
-  private void clense() {
-    double cost = 6;
-    if (!mana.canSpend(cost)) {
-      System.out.println("Priest: not enough mana for Cleanse.");
+  private void cleanse() {
+    if (!spendMana(6)) {
       return;
     }
-    mana.spend(cost);
-    // Remove negative effects and do double ap damage only to undead : TODO
+    healSelf(8 + ap.get() * 0.2);
+    restoreMana(4);
+    inflictConfiguredStatusEffectNearby(52, ap.get() * 0.8);
     setAnimation(AnimationState.ATTACK);
   }
 
   private void levitate() {
-    double cost = 8;
-    if (!mana.canSpend(cost)) {
-      System.out.println("Priest: not enough mana for Levitate.");
+    if (!spendMana(8)) {
       return;
     }
-    mana.spend(cost);
-    // Immune to AOE damage: TODO
+    dashForward(40);
+    applyTimedRegenBonus(0.75, 0.75, 4);
     setAnimation(AnimationState.ATTACK);
   }
 
   private void holyNova() {
-    double cost = 20;
-    if (!mana.canSpend(cost)) {
-      System.out.println("Priest: not enough mana for Holy Nova.");
+    if (!spendMana(20)) {
       return;
     }
-    mana.spend(cost);
-    // Heal and increase mana regen of nearby allies : TODO
+    healSelf(16 + ap.get() * 0.3);
+    applyTimedRegenBonus(1.5, 2.0, 6);
+    inflictConfiguredStatusEffectNearby(110, ap.get());
     setAnimation(AnimationState.ATTACK);
   }
 
   private void divineIntervention() {
-    double cost = 40;
-    if (!mana.canSpend(cost)) {
-      System.out.println("Priest: not enough mana for Divine Intervention.");
+    if (!spendMana(40)) {
       return;
     }
-    mana.spend(cost);
-    // Apply multipliers to ally stats : TODO
+    applyTimedApBonus(8, 8);
+    applyTimedDefenceBonus(8, 8);
+    applyTimedRegenBonus(1, 1, 8);
+    inflictConfiguredStatusEffectNearby(140, ap.get() * 1.25);
     setAnimation(AnimationState.ATTACK);
   }
 }

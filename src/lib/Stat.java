@@ -23,7 +23,7 @@ public abstract class Stat {
 
   public void scale(int level) {
     double ratio = this.value / this.max;
-    this.max = this.base + (level * 15.0);
+    this.max = this.base * (1 + Math.pow((double) level / 128.0, 0.75) * 9);
     this.value = this.max * ratio;
     clamp();
   }

@@ -10,6 +10,6 @@ public class Dialectics extends Stat {
 
   @Override
   public void scale(int level) {
-    this.value = this.base + (this.base * 0.08 * level);
+    this.value = this.base * (1 + 9 * Math.pow((double) level / 128, 0.75));
   }
 }
