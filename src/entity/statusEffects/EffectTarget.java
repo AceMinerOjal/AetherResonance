@@ -30,4 +30,13 @@ public interface EffectTarget {
 
   default void modifyAp(double amount) {
   }
+
+  default void modifyAttackSpeedMultiplier(double delta) {
+  }
+
+  default void modifyAccuracyMultiplier(double delta) {
+  }
+
+  default void modifyDetectionRangeMultiplier(double delta) {
+  }
 }

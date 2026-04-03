@@ -7,6 +7,8 @@ final class NetProtocol {
   private NetProtocol() {
   }
 
+  // --- Message builders ---
+
   public static String hello() {
     return "HELLO";
   }
@@ -15,8 +17,8 @@ final class NetProtocol {
     return "ASSIGN|" + slot;
   }
 
-  public static String input(NetInput input) {
-    return "INPUT|"
+  public static String input(int slot, NetInput input) {
+    return "INPUT|" + slot + "|"
         + bool(input.up()) + "|"
         + bool(input.down()) + "|"
         + bool(input.left()) + "|"
@@ -41,21 +43,35 @@ final class NetProtocol {
     return sb.toString();
   }
 
+  public static String heartbeat() {
+    return "HEARTBEAT";
+  }
+
+  // --- Parsers ---
+
   public static int parseAssignedSlot(String msg) {
     String[] parts = msg.split("\\|", -1);
     if (parts.length == 2 && "ASSIGN".equals(parts[0])) {
-      return Integer.parseInt(parts[1]);
+      try {
+        return Integer.parseInt(parts[1]);
+      } catch (NumberFormatException ignored) {
+      }
     }
     return -1;
   }
 
-  public static NetInput parseInput(String msg) {
+  public static ParsedInputMessage parseInputMessage(String msg) {
     String[] p = msg.split("\\|", -1);
-    if (p.length != 10 || !"INPUT".equals(p[0])) {
+    if (p.length != 11 || !"INPUT".equals(p[0])) {
       return null;
     }
-    return new NetInput(
-        parseBool(p[1]),
+    int slot;
+    try {
+      slot = Integer.parseInt(p[1]);
+    } catch (NumberFormatException e) {
+      return null;
+    }
+    NetInput input = new NetInput(
         parseBool(p[2]),
         parseBool(p[3]),
         parseBool(p[4]),
@@ -63,7 +79,9 @@ final class NetProtocol {
         parseBool(p[6]),
         parseBool(p[7]),
         parseBool(p[8]),
-        parseBool(p[9]));
+        parseBool(p[9]),
+        parseBool(p[10]));
+    return new ParsedInputMessage(slot, input);
   }
 
   public static NetSnapshot parseSnapshot(String msg) {
@@ -78,14 +96,21 @@ final class NetProtocol {
       if (v.length != 5) {
         continue;
       }
-      players.add(new NetPlayerState(
-          Integer.parseInt(v[0]),
-          Double.parseDouble(v[1]),
-          Double.parseDouble(v[2]),
-          Double.parseDouble(v[3]),
-          Double.parseDouble(v[4])));
+      try {
+        players.add(new NetPlayerState(
+            Integer.parseInt(v[0]),
+            Double.parseDouble(v[1]),
+            Double.parseDouble(v[2]),
+            Double.parseDouble(v[3]),
+            Double.parseDouble(v[4])));
+      } catch (NumberFormatException ignored) {
+      }
     }
     return new NetSnapshot(mapId, players);
+  }
+
+  public static boolean isHeartbeat(String msg) {
+    return "HEARTBEAT".equals(msg);
   }
 
   private static String bool(boolean value) {
@@ -94,5 +119,25 @@ final class NetProtocol {
 
   private static boolean parseBool(String raw) {
     return "1".equals(raw) || "true".equalsIgnoreCase(raw);
+  }
+
+  // --- Parsed message carriers ---
+
+  static final class ParsedInputMessage {
+    private final int slot;
+    private final NetInput input;
+
+    ParsedInputMessage(int slot, NetInput input) {
+      this.slot = slot;
+      this.input = input;
+    }
+
+    int slot() {
+      return slot;
+    }
+
+    NetInput input() {
+      return input;
+    }
   }
 }

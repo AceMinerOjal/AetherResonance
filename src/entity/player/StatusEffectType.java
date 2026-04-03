@@ -4,7 +4,9 @@ public enum StatusEffectType {
   BURN,
   FREEZE,
   CONDUCTIVE,
-  FRACTURE;
+  FRACTURE,
+  HASTE_SLOW,
+  OBSCURE;
 
   public StatusEffectType next() {
     StatusEffectType[] values = values();

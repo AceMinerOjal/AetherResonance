@@ -7,6 +7,8 @@ import java.awt.Toolkit;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
 import net.NetworkConfig;
 import net.NetworkMode;
@@ -78,6 +80,7 @@ public class Main {
     NetworkMode mode = NetworkMode.LOCAL;
     String host = "127.0.0.1";
     int port = 7777;
+    List<String> peerAddresses = new ArrayList<>();
     RenderBackend renderBackend = RenderBackend.JAVA2D;
 
     for (String arg : args) {
@@ -85,10 +88,8 @@ public class Main {
         String value = arg.substring("--mode=".length()).trim().toLowerCase();
         mode = switch (value) {
           case "local" -> NetworkMode.LOCAL;
-          case "lan-host" -> NetworkMode.LAN_HOST;
-          case "lan-client" -> NetworkMode.LAN_CLIENT;
-          case "tcp-host" -> NetworkMode.TCP_HOST;
-          case "tcp-client" -> NetworkMode.TCP_CLIENT;
+          case "p2p-host" -> NetworkMode.P2P_HOST;
+          case "p2p-peer" -> NetworkMode.P2P_PEER;
           default -> mode;
         };
       } else if (arg.startsWith("--host=")) {
@@ -98,6 +99,8 @@ public class Main {
           port = Integer.parseInt(arg.substring("--port=".length()).trim());
         } catch (NumberFormatException ignored) {
         }
+      } else if (arg.startsWith("--peer=")) {
+        peerAddresses.add(arg.substring("--peer=".length()).trim());
       } else if (arg.startsWith("--renderer=")) {
         String value = arg.substring("--renderer=".length()).trim().toLowerCase();
         if ("vulkan".equals(value)) {
@@ -108,7 +111,7 @@ public class Main {
       }
     }
 
-    return new LaunchOptions(new NetworkConfig(mode, host, port), renderBackend);
+    return new LaunchOptions(new NetworkConfig(mode, host, port, peerAddresses), renderBackend);
   }
 
   private record LaunchOptions(NetworkConfig networkConfig, RenderBackend renderBackend) {

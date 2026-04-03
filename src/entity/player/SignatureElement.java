@@ -4,7 +4,9 @@ public enum SignatureElement {
   FIRE,
   ICE,
   LIGHTNING,
-  EARTH;
+  EARTH,
+  WIND,
+  SHADOW;
 
   public SignatureElement next() {
     SignatureElement[] values = values();

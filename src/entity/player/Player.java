@@ -9,6 +9,7 @@ import save.PlayerSaveState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 import entity.player.stats.Dialectics;
 import entity.player.stats.Level;
@@ -18,9 +19,12 @@ import entity.statusEffects.EffectTarget;
 import entity.statusEffects.FireBurn;
 import entity.statusEffects.IceFreeze;
 import entity.statusEffects.LightningConductive;
+import entity.statusEffects.ShadowObscure;
 import entity.statusEffects.StatusEffect;
+import entity.statusEffects.WindTempo;
 
 public abstract class Player extends Entity implements EffectTarget {
+  private static final double BASE_SKILL_RECOVERY_SECONDS = 0.35;
 
   protected Health hp;
   protected Mana mana;
@@ -39,6 +43,10 @@ public abstract class Player extends Entity implements EffectTarget {
   private List<Player> party = Collections.emptyList();
   private SignatureElement signatureElement;
   private double damageTakenMultiplier = 1.0;
+  private double attackSpeedMultiplier = 1.0;
+  private double accuracyMultiplier = 1.0;
+  private double detectionRangeMultiplier = 1.0;
+  private double skillRecoveryRemaining;
   private boolean frozen;
   private boolean friendlyFireEnabled;
 
@@ -76,6 +84,7 @@ public abstract class Player extends Entity implements EffectTarget {
     mana.update(dt);
     ap.update(dt);
     defence.update(dt);
+    skillRecoveryRemaining = Math.max(0.0, skillRecoveryRemaining - dt);
   }
 
   public void clampToBounds(int worldWidth, int worldHeight) {
@@ -194,8 +203,12 @@ public abstract class Player extends Entity implements EffectTarget {
   protected abstract void performSkill(int skillNum);
 
   private void handleHotbarInput(int slot) {
+    if (skillRecoveryRemaining > 0.0) {
+      return;
+    }
     performSkill(slot);
     setAnimation(AnimationState.ATTACK);
+    skillRecoveryRemaining = BASE_SKILL_RECOVERY_SECONDS / Math.max(0.25, attackSpeedMultiplier);
   }
 
   private void handleInventoryInput(int slot) {
@@ -279,6 +292,9 @@ public abstract class Player extends Entity implements EffectTarget {
     if (!friendlyFireEnabled || !target.friendlyFireEnabled) {
       return;
     }
+    if (ThreadLocalRandom.current().nextDouble() > Math.min(1.0, Math.max(0.05, accuracyMultiplier))) {
+      return;
+    }
 
     // Offensive skills always inherit the active elemental skill type.
     StatusEffect effect = switch (statusForElement(signatureElement)) {
@@ -286,6 +302,8 @@ public abstract class Player extends Entity implements EffectTarget {
       case FREEZE -> new IceFreeze(Math.max(0.75, 1.25 + power * 0.01));
       case CONDUCTIVE -> new LightningConductive(3.0, Math.max(1.0, power * 0.2), 1.0, 0.5, 64.0);
       case FRACTURE -> new EarthFracture(4.0, 0.15);
+      case HASTE_SLOW -> new WindTempo(3.5, -0.35);
+      case OBSCURE -> new ShadowObscure(4.0, -0.35, -0.4);
     };
 
     effect.apply(target);
@@ -374,6 +392,8 @@ public abstract class Player extends Entity implements EffectTarget {
       case ICE -> StatusEffectType.FREEZE;
       case LIGHTNING -> StatusEffectType.CONDUCTIVE;
       case EARTH -> StatusEffectType.FRACTURE;
+      case WIND -> StatusEffectType.HASTE_SLOW;
+      case SHADOW -> StatusEffectType.OBSCURE;
     };
   }
 
@@ -408,6 +428,7 @@ public abstract class Player extends Entity implements EffectTarget {
     if (party.isEmpty()) {
       return Collections.emptyList();
     }
+    double effectiveRadius = Math.max(0.0, radius * detectionRangeMultiplier);
     List<Entity> nearby = new ArrayList<>();
     for (Player other : party) {
       if (other == null || other == this) {
@@ -415,11 +436,26 @@ public abstract class Player extends Entity implements EffectTarget {
       }
       double dx = other.x - x;
       double dy = other.y - y;
-      if (Math.hypot(dx, dy) <= radius) {
+      if (Math.hypot(dx, dy) <= effectiveRadius) {
         nearby.add(other);
       }
     }
     return nearby;
+  }
+
+  @Override
+  public void modifyAttackSpeedMultiplier(double delta) {
+    attackSpeedMultiplier = Math.max(0.25, attackSpeedMultiplier + delta);
+  }
+
+  @Override
+  public void modifyAccuracyMultiplier(double delta) {
+    accuracyMultiplier = Math.max(0.05, accuracyMultiplier + delta);
+  }
+
+  @Override
+  public void modifyDetectionRangeMultiplier(double delta) {
+    detectionRangeMultiplier = Math.max(0.1, detectionRangeMultiplier + delta);
   }
 
   public void gainExp(int amount) {

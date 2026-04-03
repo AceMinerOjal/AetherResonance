@@ -4,12 +4,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,205 +13,117 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Host-authoritative network session.
+ *
+ * Architecture:
+ * - P2P_HOST: listens on a TCP port, accepts client connections, assigns slots,
+ *   receives player inputs, and publishes world snapshots.
+ * - P2P_PEER: connects to the host, receives a slot assignment, sends local
+ *   input upstream, and renders snapshots received from the host.
+ */
 public class NetworkSession implements AutoCloseable {
   private final NetworkConfig config;
   private final AtomicBoolean running = new AtomicBoolean(true);
 
-  private final Map<Integer, NetInput> hostSlotInputs = new ConcurrentHashMap<>();
-  private final Map<SocketAddress, Integer> udpClientSlots = new ConcurrentHashMap<>();
-  private final CopyOnWriteArrayList<SocketAddress> udpClients = new CopyOnWriteArrayList<>();
-  private final CopyOnWriteArrayList<TcpClientPeer> tcpClients = new CopyOnWriteArrayList<>();
-  private final AtomicReference<NetSnapshot> latestSnapshot = new AtomicReference<>(new NetSnapshot("", List.of()));
+  // My assigned slot (set by host or self-assigned for host)
+  private volatile int mySlot = -1;
 
-  private volatile int assignedSlot = -1;
+  // Inputs received from other peers, keyed by their slot
+  private final Map<Integer, NetInput> remoteInputs = new ConcurrentHashMap<>();
 
-  private DatagramSocket udpSocket;
-  private ServerSocket tcpServer;
-  private Socket tcpClient;
-  private PrintWriter tcpClientOut;
+  // Latest full snapshot received from the host
+  private volatile NetSnapshot latestSnapshot = new NetSnapshot("", List.of());
+
+  // Host-side: all connected clients
+  private final CopyOnWriteArrayList<HostPeer> hostPeers = new CopyOnWriteArrayList<>();
+  private ServerSocket serverSocket;
+  private Socket hostSocket;
+  private PrintWriter hostOut;
 
   public NetworkSession(NetworkConfig config) {
     this.config = config;
     if (config.mode().isHost()) {
       startHost();
-    } else if (config.mode().isClient()) {
-      startClient();
+    } else if (config.mode().isPeer()) {
+      startPeer();
     }
   }
 
-  public Map<Integer, NetInput> hostInputs() {
-    return hostSlotInputs;
+  public int mySlot() {
+    return mySlot;
+  }
+
+  public Map<Integer, NetInput> remoteInputs() {
+    return remoteInputs;
   }
 
   public NetSnapshot latestSnapshot() {
-    return latestSnapshot.get();
+    return latestSnapshot;
   }
 
+  /**
+   * Send my input to the host.
+   */
   public void sendInput(NetInput input) {
-    if (!config.mode().isClient() || input == null) {
+    if (input == null || mySlot < 0) {
       return;
     }
-    if (assignedSlot < 0) {
-      if (config.mode().isLan()) {
-        sendUdp(NetProtocol.hello());
-      } else {
-        PrintWriter out = tcpClientOut;
-        if (out != null) {
-          out.println(NetProtocol.hello());
-        }
-      }
-    }
-    String payload = NetProtocol.input(input);
-    if (config.mode().isLan()) {
-      sendUdp(payload);
-    } else {
-      PrintWriter out = tcpClientOut;
-      if (out != null) {
-        out.println(payload);
-      }
+    String msg = NetProtocol.input(mySlot, input);
+    PrintWriter out = hostOut;
+    if (out != null) {
+      out.println(msg);
     }
   }
 
+  /**
+   * Publish a full snapshot to all connected clients.
+   */
   public void publishSnapshot(NetSnapshot snapshot) {
-    if (!config.mode().isHost() || snapshot == null) {
+    if (snapshot == null || !config.mode().isHost()) {
       return;
     }
     String msg = NetProtocol.snapshot(snapshot);
-    if (config.mode().isLan()) {
-      byte[] bytes = msg.getBytes(StandardCharsets.UTF_8);
-      for (SocketAddress addr : udpClients) {
-        try {
-          udpSocket.send(new DatagramPacket(bytes, bytes.length, ((InetSocketAddress) addr).getAddress(),
-              ((InetSocketAddress) addr).getPort()));
-        } catch (IOException ignored) {
-        }
-      }
-    } else {
-      for (TcpClientPeer peer : tcpClients) {
-        peer.out.println(msg);
-      }
+    for (HostPeer hp : hostPeers) {
+      hp.out.println(msg);
     }
   }
+
+  public List<Integer> connectedSlots() {
+    List<Integer> slots = new ArrayList<>();
+    for (HostPeer hp : hostPeers) {
+      if (hp.slot > 0) {
+        slots.add(hp.slot);
+      }
+    }
+    return slots;
+  }
+
+  // =========================================================================
+  // Host logic
+  // =========================================================================
 
   private void startHost() {
-    if (config.mode().isLan()) {
-      startLanHost();
-    } else {
-      startTcpHost();
-    }
-  }
-
-  private void startClient() {
-    if (config.mode().isLan()) {
-      startLanClient();
-    } else {
-      startTcpClient();
-    }
-  }
-
-  private void startLanHost() {
     try {
-      udpSocket = new DatagramSocket(config.port());
-      Thread t = new Thread(this::lanHostLoop, "LanHostLoop");
-      t.setDaemon(true);
-      t.start();
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to start LAN host on port " + config.port(), e);
-    }
-  }
-
-  private void lanHostLoop() {
-    byte[] buf = new byte[2048];
-    while (running.get()) {
-      try {
-        DatagramPacket packet = new DatagramPacket(buf, buf.length);
-        udpSocket.receive(packet);
-        String msg = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
-        InetSocketAddress from = new InetSocketAddress(packet.getAddress(), packet.getPort());
-        if ("HELLO".equals(msg)) {
-          int slot = udpClientSlots.computeIfAbsent(from, key -> assignRemoteSlot());
-          if (slot > 0) {
-            if (!udpClients.contains(from)) {
-              udpClients.add(from);
-            }
-            byte[] reply = NetProtocol.assign(slot).getBytes(StandardCharsets.UTF_8);
-            udpSocket.send(new DatagramPacket(reply, reply.length, from.getAddress(), from.getPort()));
-          }
-        } else {
-          NetInput in = NetProtocol.parseInput(msg);
-          if (in != null) {
-            Integer slot = udpClientSlots.get(from);
-            if (slot != null && slot > 0) {
-              hostSlotInputs.put(slot, in);
-            }
-          }
-        }
-      } catch (IOException ignored) {
-      }
-    }
-  }
-
-  private void startLanClient() {
-    try {
-      udpSocket = new DatagramSocket();
-      udpSocket.connect(new InetSocketAddress(config.host(), config.port()));
-      Thread t = new Thread(this::lanClientLoop, "LanClientLoop");
-      t.setDaemon(true);
-      t.start();
-      sendUdp(NetProtocol.hello());
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to start LAN client " + config.host() + ":" + config.port(), e);
-    }
-  }
-
-  private void lanClientLoop() {
-    byte[] buf = new byte[4096];
-    while (running.get()) {
-      try {
-        DatagramPacket packet = new DatagramPacket(buf, buf.length);
-        udpSocket.receive(packet);
-        String msg = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
-        if (msg.startsWith("ASSIGN|")) {
-          assignedSlot = NetProtocol.parseAssignedSlot(msg);
-        } else if (msg.startsWith("SNAP|")) {
-          NetSnapshot snapshot = NetProtocol.parseSnapshot(msg);
-          if (snapshot != null) {
-            latestSnapshot.set(snapshot);
-          }
-        }
-      } catch (IOException ignored) {
-      }
-    }
-  }
-
-  private void sendUdp(String msg) {
-    try {
-      byte[] bytes = msg.getBytes(StandardCharsets.UTF_8);
-      udpSocket.send(new DatagramPacket(bytes, bytes.length));
-    } catch (IOException ignored) {
-    }
-  }
-
-  private void startTcpHost() {
-    try {
-      tcpServer = new ServerSocket(config.port());
-      Thread accept = new Thread(this::tcpHostAcceptLoop, "TcpHostAcceptLoop");
+      serverSocket = new ServerSocket(config.port());
+      mySlot = 0; // host always gets slot 0
+      Thread accept = new Thread(this::hostAcceptLoop, "P2PHostAccept");
       accept.setDaemon(true);
       accept.start();
+      System.out.println("[P2P] Host listening on port " + config.port() + " (slot 0)");
     } catch (IOException e) {
-      throw new IllegalStateException("Failed to start TCP host on port " + config.port(), e);
+      throw new IllegalStateException("Failed to start P2P host on port " + config.port(), e);
     }
   }
 
-  private void tcpHostAcceptLoop() {
+  private void hostAcceptLoop() {
     while (running.get()) {
       try {
-        Socket socket = tcpServer.accept();
-        TcpClientPeer peer = new TcpClientPeer(socket);
-        tcpClients.add(peer);
-        Thread t = new Thread(() -> tcpHostClientLoop(peer), "TcpHostClientLoop");
+        Socket socket = serverSocket.accept();
+        HostPeer peer = new HostPeer(socket);
+        hostPeers.add(peer);
+        Thread t = new Thread(() -> hostPeerLoop(peer), "P2PHostPeerLoop");
         t.setDaemon(true);
         t.start();
       } catch (IOException ignored) {
@@ -223,70 +131,40 @@ public class NetworkSession implements AutoCloseable {
     }
   }
 
-  private void tcpHostClientLoop(TcpClientPeer peer) {
+  private void hostPeerLoop(HostPeer peer) {
     try {
       String line;
       while (running.get() && (line = peer.in.readLine()) != null) {
         if ("HELLO".equals(line)) {
           if (peer.slot < 0) {
-            peer.slot = assignRemoteSlot();
+            peer.slot = assignSlot();
             if (peer.slot > 0) {
               peer.out.println(NetProtocol.assign(peer.slot));
             }
           }
           continue;
         }
-        NetInput input = NetProtocol.parseInput(line);
-        if (input != null && peer.slot > 0) {
-          hostSlotInputs.put(peer.slot, input);
-        }
-      }
-    } catch (IOException ignored) {
-    } finally {
-      tcpClients.remove(peer);
-      closeQuietly(peer.socket);
-    }
-  }
-
-  private void startTcpClient() {
-    try {
-      tcpClient = new Socket(config.host(), config.port());
-      tcpClientOut = new PrintWriter(tcpClient.getOutputStream(), true);
-      Thread t = new Thread(this::tcpClientLoop, "TcpClientLoop");
-      t.setDaemon(true);
-      t.start();
-      tcpClientOut.println(NetProtocol.hello());
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to connect TCP client " + config.host() + ":" + config.port(), e);
-    }
-  }
-
-  private void tcpClientLoop() {
-    try (BufferedReader in = new BufferedReader(new InputStreamReader(tcpClient.getInputStream(), StandardCharsets.UTF_8))) {
-      String line;
-      while (running.get() && (line = in.readLine()) != null) {
-        if (line.startsWith("ASSIGN|")) {
-          assignedSlot = NetProtocol.parseAssignedSlot(line);
-        } else if (line.startsWith("SNAP|")) {
-          NetSnapshot snapshot = NetProtocol.parseSnapshot(line);
-          if (snapshot != null) {
-            latestSnapshot.set(snapshot);
+        if (line.startsWith("INPUT|")) {
+          NetProtocol.ParsedInputMessage parsed = NetProtocol.parseInputMessage(line);
+          if (parsed != null && parsed.slot() == peer.slot) {
+            remoteInputs.put(parsed.slot(), parsed.input());
           }
         }
       }
     } catch (IOException ignored) {
+    } finally {
+      hostPeers.remove(peer);
+      if (peer.slot > 0) {
+        remoteInputs.remove(peer.slot);
+      }
+      closeQuietly(peer.socket);
     }
   }
 
-  private int assignRemoteSlot() {
-    boolean[] used = new boolean[] { false, false, false, false };
+  private int assignSlot() {
+    boolean[] used = new boolean[4]; // slots 0-3, 0 is host
     used[0] = true;
-    for (Integer slot : udpClientSlots.values()) {
-      if (slot != null && slot >= 0 && slot < used.length) {
-        used[slot] = true;
-      }
-    }
-    for (TcpClientPeer peer : tcpClients) {
+    for (HostPeer peer : hostPeers) {
       if (peer.slot >= 0 && peer.slot < used.length) {
         used[peer.slot] = true;
       }
@@ -299,37 +177,87 @@ public class NetworkSession implements AutoCloseable {
     return -1;
   }
 
+  // =========================================================================
+  // Peer logic
+  // =========================================================================
+
+  private void startPeer() {
+    try {
+      hostSocket = new Socket(config.host(), config.port());
+      hostOut = new PrintWriter(hostSocket.getOutputStream(), true);
+      BufferedReader hostIn = new BufferedReader(
+          new InputStreamReader(hostSocket.getInputStream(), StandardCharsets.UTF_8));
+
+      hostOut.println(NetProtocol.hello());
+
+      Thread t = new Thread(() -> peerHostLoop(hostSocket, hostIn), "P2PClientHostLoop");
+      t.setDaemon(true);
+      t.start();
+    } catch (IOException e) {
+      throw new IllegalStateException(
+          "Failed to connect to P2P host " + config.host() + ":" + config.port(), e);
+    }
+  }
+
+  private void peerHostLoop(Socket hostSocket, BufferedReader in) {
+    try {
+      String line;
+      while (running.get() && (line = in.readLine()) != null) {
+        handlePeerMessage(line);
+      }
+    } catch (IOException ignored) {
+    } finally {
+      closeQuietly(hostSocket);
+    }
+  }
+
+  private void handlePeerMessage(String line) {
+    if (line.startsWith("ASSIGN|")) {
+      mySlot = NetProtocol.parseAssignedSlot(line);
+      System.out.println("[P2P] Assigned slot " + mySlot);
+    } else if (line.startsWith("SNAP|")) {
+      NetSnapshot snapshot = NetProtocol.parseSnapshot(line);
+      if (snapshot != null) {
+        latestSnapshot = snapshot;
+      }
+    } else if (NetProtocol.isHeartbeat(line)) {
+      // ignore
+    }
+  }
+
   @Override
   public void close() {
     running.set(false);
-    closeQuietly(udpSocket);
-    closeQuietly(tcpServer);
-    closeQuietly(tcpClient);
-    for (TcpClientPeer peer : new ArrayList<>(tcpClients)) {
-      closeQuietly(peer.socket);
+    closeQuietly(serverSocket);
+    closeQuietly(hostSocket);
+    for (HostPeer hp : new ArrayList<>(hostPeers)) {
+      closeQuietly(hp.socket);
     }
-    tcpClients.clear();
+    hostPeers.clear();
   }
 
   private static void closeQuietly(AutoCloseable c) {
-    if (c == null) {
-      return;
-    }
+    if (c == null) return;
     try {
       c.close();
     } catch (Exception ignored) {
     }
   }
 
-  private static final class TcpClientPeer {
+  // =========================================================================
+  // Inner classes
+  // =========================================================================
+
+  private static final class HostPeer {
     final Socket socket;
     final BufferedReader in;
     final PrintWriter out;
     volatile int slot = -1;
 
-    TcpClientPeer(Socket socket) throws IOException {
+    HostPeer(Socket socket) throws IOException {
       this.socket = socket;
-      this.in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+      this.in = new BufferedReader(
+          new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
       this.out = new PrintWriter(socket.getOutputStream(), true);
     }
   }

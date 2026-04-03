@@ -72,8 +72,6 @@ public class GamePanel extends JPanel implements Runnable {
       KeyEvent.VK_F4
   };
   private static final String[] MAP_IDS = GamePaths.DEFAULT_MAP_IDS;
-  private static final NetInput EMPTY_INPUT = new NetInput(
-      false, false, false, false, false, false, false, false, false);
 
   final int actualTileSize;
   final int screenWidth;
@@ -81,6 +79,7 @@ public class GamePanel extends JPanel implements Runnable {
 
   private final NetworkMode networkMode;
   private final NetworkSession networkSession;
+  private final KeyHandler[] slotKeyHandlers = new KeyHandler[MAX_PLAYERS];
 
   private Thread gameThread;
   private final KeyHandler kh = new KeyHandler();
@@ -100,6 +99,7 @@ public class GamePanel extends JPanel implements Runnable {
   public GamePanel(NetworkConfig networkConfig) {
     this.networkMode = networkConfig.mode();
     this.networkSession = networkMode.isLocal() ? null : new NetworkSession(networkConfig);
+    initializeSlotKeyHandlers();
 
     Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
 
@@ -133,7 +133,7 @@ public class GamePanel extends JPanel implements Runnable {
       System.err.println("Level init failed: " + ex.getMessage());
     }
 
-    if (!networkMode.isClient()) {
+    if (!networkMode.isPeer()) {
       joinSlot(0);
     }
   }
@@ -178,29 +178,34 @@ public class GamePanel extends JPanel implements Runnable {
   }
 
   public void update(double dt) {
-    if (networkMode.isClient()) {
-      updateClient();
+    if (networkMode.isPeer()) {
+      updatePeer();
       return;
     }
 
     if (networkMode.isLocal()) {
       handleJoinHotkeys();
-    } else {
-      applyHostRemoteInputs();
     }
     handleSaveHotkeys();
 
+    if (networkMode.isHost()) {
+      syncNetworkPlayers();
+    }
+
     simulateWorld(dt);
 
-    if (networkMode.isHost()) {
+    if (networkMode.isP2P()) {
       networkSession.publishSnapshot(buildSnapshot());
     }
   }
 
-  private void updateClient() {
+  private void updatePeer() {
     NetInput input = NetInput.fromClientKeys(kh);
     networkSession.sendInput(input);
 
+    handleSaveHotkeys();
+
+    // Process incoming snapshots from peers
     NetSnapshot incoming = networkSession.latestSnapshot();
     if (incoming != null) {
       clientSnapshot = incoming;
@@ -296,7 +301,7 @@ public class GamePanel extends JPanel implements Runnable {
       map.draw(g2);
     }
 
-    if (networkMode.isClient()) {
+    if (networkMode.isPeer()) {
       for (NetPlayerState p : clientSnapshot.players()) {
         g2.setColor(PLAYER_COLORS[Math.max(0, Math.min(PLAYER_COLORS.length - 1, p.slot()))]);
         g2.fillRect((int) p.x(), (int) p.y(), (int) p.width(), (int) p.height());
@@ -352,11 +357,12 @@ public class GamePanel extends JPanel implements Runnable {
   }
 
   private Player createPlayerForSlot(int slot, double x, double y) {
+    KeyHandler slotKeyHandler = slotKeyHandlers[slot];
     return switch (slot) {
-      case 0 -> new Mage(x, y, kh, SLOT_CONTROLS[0]);
-      case 1 -> new Warrior(x, y, kh, SLOT_CONTROLS[1]);
-      case 2 -> new Tank(x, y, kh, SLOT_CONTROLS[2]);
-      case 3 -> new Priest(x, y, kh, SLOT_CONTROLS[3]);
+      case 0 -> new Mage(x, y, slotKeyHandler, SLOT_CONTROLS[0]);
+      case 1 -> new Warrior(x, y, slotKeyHandler, SLOT_CONTROLS[1]);
+      case 2 -> new Tank(x, y, slotKeyHandler, SLOT_CONTROLS[2]);
+      case 3 -> new Priest(x, y, slotKeyHandler, SLOT_CONTROLS[3]);
       default -> null;
     };
   }
@@ -443,30 +449,6 @@ public class GamePanel extends JPanel implements Runnable {
     syncPartyRefs();
   }
 
-  private void applyHostRemoteInputs() {
-    for (int slot = 1; slot < MAX_PLAYERS; slot++) {
-      NetInput input = networkSession.hostInputs().get(slot);
-      if (input != null && !joinedSlots[slot]) {
-        joinSlot(slot);
-      }
-      applyInputToSlot(slot, input == null ? EMPTY_INPUT : input);
-    }
-  }
-
-  private void applyInputToSlot(int slot, NetInput input) {
-    PlayerControls controls = SLOT_CONTROLS[slot];
-    int[] skills = controls.skillKeys();
-    kh.setVirtualDown(controls.upKey(), input.up());
-    kh.setVirtualDown(controls.downKey(), input.down());
-    kh.setVirtualDown(controls.leftKey(), input.left());
-    kh.setVirtualDown(controls.rightKey(), input.right());
-    kh.setVirtualDown(controls.itemModifierKey(), input.item());
-    kh.setVirtualDown(skills[0], input.skill1());
-    kh.setVirtualDown(skills[1], input.skill2());
-    kh.setVirtualDown(skills[2], input.skill3());
-    kh.setVirtualDown(skills[3], input.skill4());
-  }
-
   private NetSnapshot buildSnapshot() {
     List<NetPlayerState> states = new ArrayList<>(players.size());
     for (Player player : players) {
@@ -479,6 +461,56 @@ public class GamePanel extends JPanel implements Runnable {
 
   private void clearJoinedSlots() {
     Arrays.fill(joinedSlots, false);
+  }
+
+  private void initializeSlotKeyHandlers() {
+    for (int slot = 0; slot < MAX_PLAYERS; slot++) {
+      slotKeyHandlers[slot] = (slot == 0 || networkMode.isLocal()) ? kh : new KeyHandler();
+    }
+  }
+
+  private void syncNetworkPlayers() {
+    boolean[] connected = new boolean[MAX_PLAYERS];
+    for (int slot : networkSession.connectedSlots()) {
+      connected[slot] = true;
+      if (!joinedSlots[slot]) {
+        joinSlot(slot);
+      }
+      applyRemoteInput(slot, networkSession.remoteInputs().get(slot));
+    }
+    for (int slot = 1; slot < MAX_PLAYERS; slot++) {
+      if (!connected[slot]) {
+        applyRemoteInput(slot, null);
+      }
+    }
+  }
+
+  private void applyRemoteInput(int slot, NetInput input) {
+    if (slot <= 0 || slot >= MAX_PLAYERS) {
+      return;
+    }
+    KeyHandler slotKeyHandler = slotKeyHandlers[slot];
+    PlayerControls controls = SLOT_CONTROLS[slot];
+    int[] skillKeys = controls.skillKeys();
+    boolean up = input != null && input.up();
+    boolean down = input != null && input.down();
+    boolean left = input != null && input.left();
+    boolean right = input != null && input.right();
+    boolean item = input != null && input.item();
+    boolean skill1 = input != null && input.skill1();
+    boolean skill2 = input != null && input.skill2();
+    boolean skill3 = input != null && input.skill3();
+    boolean skill4 = input != null && input.skill4();
+
+    slotKeyHandler.setVirtualDown(controls.upKey(), up);
+    slotKeyHandler.setVirtualDown(controls.downKey(), down);
+    slotKeyHandler.setVirtualDown(controls.leftKey(), left);
+    slotKeyHandler.setVirtualDown(controls.rightKey(), right);
+    slotKeyHandler.setVirtualDown(controls.itemModifierKey(), item);
+    slotKeyHandler.setVirtualDown(skillKeys[0], skill1);
+    slotKeyHandler.setVirtualDown(skillKeys[1], skill2);
+    slotKeyHandler.setVirtualDown(skillKeys[2], skill3);
+    slotKeyHandler.setVirtualDown(skillKeys[3], skill4);
   }
 
   private void syncPartyRefs() {

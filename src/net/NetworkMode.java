@@ -2,24 +2,22 @@ package net;
 
 public enum NetworkMode {
   LOCAL,
-  LAN_HOST,
-  LAN_CLIENT,
-  TCP_HOST,
-  TCP_CLIENT;
+  P2P_HOST,
+  P2P_PEER;
 
   public boolean isLocal() {
     return this == LOCAL;
   }
 
+  public boolean isP2P() {
+    return this == P2P_HOST || this == P2P_PEER;
+  }
+
   public boolean isHost() {
-    return this == LAN_HOST || this == TCP_HOST;
+    return this == P2P_HOST;
   }
 
-  public boolean isClient() {
-    return this == LAN_CLIENT || this == TCP_CLIENT;
-  }
-
-  public boolean isLan() {
-    return this == LAN_HOST || this == LAN_CLIENT;
+  public boolean isPeer() {
+    return this == P2P_PEER;
   }
 }

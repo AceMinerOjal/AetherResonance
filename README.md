@@ -9,7 +9,7 @@ AetherResonance is a top-down Java party RPG with:
 - up to 4 class slots (Mage, Warrior, Tank, Priest)
 - Tiled JSON maps with collision and portals
 - save/load quickstates
-- LAN/TCP host-client networking
+- host-authoritative TCP networking
 - elemental skill/status system
 - map-aware enemies with 10-tile sensing and pathfinding
 
@@ -29,10 +29,8 @@ Build and run with your normal Java/Maven workflow.
 Network mode is configured with JVM args:
 
 - local (default): `--mode=local`
-- LAN host: `--mode=lan-host --port=7777`
-- LAN client: `--mode=lan-client --host=HOST_IP --port=7777`
-- TCP host: `--mode=tcp-host --port=7777`
-- TCP client: `--mode=tcp-client --host=HOST_IP --port=7777`
+- host: `--mode=p2p-host --port=7777`
+- client: `--mode=p2p-peer --host=HOST_IP --port=7777`
 
 Renderer mode:
 
@@ -41,9 +39,9 @@ Renderer mode:
 
 Networking model:
 
-- host is authoritative
-- clients send inputs
-- host publishes snapshots
+- host simulates the world and is authoritative
+- clients send local input to the host
+- host publishes snapshots for clients to render
 
 ## Controls
 
@@ -84,9 +82,16 @@ Class race/profession identities:
 
 Element/status behavior:
 
-- active skill type is the current signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`)
+- active skill type is the current signature element (`FIRE`, `ICE`, `LIGHTNING`, `EARTH`, `WIND`, `SHADOW`)
 - applied status effect is derived from the active element
 - all classes can cycle elements at runtime
+- mappings:
+- `FIRE` -> `Burn` (damage over time)
+- `ICE` -> `Freeze` (immobilization)
+- `LIGHTNING` -> `Conductive` (chain damage)
+- `EARTH` -> `Fracture` (increased physical damage taken)
+- `WIND` -> `Haste/Slow` (attack-speed manipulation, currently applies `Slow` as a debuff)
+- `SHADOW` -> `Obscure` (reduced status-application accuracy and reduced nearby-detection radius)
 
 Hotbar controls:
 
