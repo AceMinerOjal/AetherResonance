@@ -22,6 +22,7 @@ public class Tank extends Player {
     this.mana = new Mana(10, 10, 0.25);
     this.ap = new Dialectics(10);
     this.defence = new Dialectics(20);
+    loadPlayerSprites("tank");
   }
 
   @Override

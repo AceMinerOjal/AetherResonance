@@ -22,6 +22,7 @@ public class Priest extends Player {
     this.mana = new Mana(20, 20, 0.2);
     this.ap = new Dialectics(10);
     this.defence = new Dialectics(10);
+    loadPlayerSprites("priest");
   }
 
   @Override

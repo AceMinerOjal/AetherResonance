@@ -24,19 +24,26 @@ public class Enemy extends Entity {
     this.movementVariant = movementVariant;
   }
 
+  public int getMovementVariant() {
+    return movementVariant;
+  }
+
   public void setWorldPosition(double x, double y) {
     setPosition(x, y);
   }
 
   public void update(double dt, TiledMap map, List<Player> players) {
+    updateAnimation(dt);
     if (map == null || players == null || players.isEmpty()) {
       path.clear();
+      setAnimation(AnimationState.IDLE);
       return;
     }
 
     Player target = nearestSensedPlayer(map, players);
     if (target == null) {
       path.clear();
+      setAnimation(AnimationState.IDLE);
       return;
     }
 
@@ -86,12 +93,13 @@ public class Enemy extends Entity {
 
   private void followPath(double dt, TiledMap map) {
     if (path.isEmpty()) {
+      setAnimation(AnimationState.IDLE);
       return;
     }
 
     int[] nextTile = path.get(0);
-    double targetX = nextTile[0] * map.getTileWidth() + (map.getTileWidth() * 0.5);
-    double targetY = nextTile[1] * map.getTileHeight() + (map.getTileHeight() * 0.5);
+    double targetX = nextTile[0] * map.getTileWidth();
+    double targetY = nextTile[1] * map.getTileHeight();
 
     double dx = targetX - x;
     double dy = targetY - y;
@@ -99,8 +107,14 @@ public class Enemy extends Entity {
 
     if (distance < 1.5) {
       path.remove(0);
+      setAnimation(path.isEmpty() ? AnimationState.IDLE : AnimationState.WALK);
       return;
     }
+
+    direction = Math.abs(dx) > Math.abs(dy)
+        ? (dx >= 0 ? Direction.RIGHT : Direction.LEFT)
+        : (dy >= 0 ? Direction.DOWN : Direction.UP);
+    setAnimation(AnimationState.WALK);
 
     double maxStep = SPEED_PX_PER_SEC * dt;
     double step = Math.min(maxStep, distance);

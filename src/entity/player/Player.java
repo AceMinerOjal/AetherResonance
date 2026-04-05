@@ -85,6 +85,7 @@ public abstract class Player extends Entity implements EffectTarget {
     ap.update(dt);
     defence.update(dt);
     skillRecoveryRemaining = Math.max(0.0, skillRecoveryRemaining - dt);
+    updateAnimation(dt);
   }
 
   public void clampToBounds(int worldWidth, int worldHeight) {
@@ -191,10 +192,14 @@ public abstract class Player extends Entity implements EffectTarget {
     if (mag > 0) {
       vx = dx / mag;
       vy = dy / mag;
-      setAnimation(AnimationState.WALK);
+      if (getCurrentAnimation() != AnimationState.ATTACK || skillRecoveryRemaining <= 0.0) {
+        setAnimation(AnimationState.WALK);
+      }
     } else {
       vx = vy = 0.0;
-      setAnimation(AnimationState.IDLE);
+      if (getCurrentAnimation() != AnimationState.ATTACK || skillRecoveryRemaining <= 0.0) {
+        setAnimation(AnimationState.IDLE);
+      }
     }
 
     setPosition(x + vx * SPEED * dt, y + vy * SPEED * dt);

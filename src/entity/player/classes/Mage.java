@@ -22,6 +22,7 @@ public class Mage extends Player {
     this.mana = new Mana(20, 20, 0.5);
     this.ap = new Dialectics(20);
     this.defence = new Dialectics(10);
+    loadPlayerSprites("mage");
   }
 
   @Override
