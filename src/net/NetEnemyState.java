@@ -1,7 +1,6 @@
 package net;
 
-public record NetPlayerState(
-    int slot,
+public record NetEnemyState(
     String appearanceId,
     double x,
     double y,

@@ -6,25 +6,17 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JPanel;
 
 import entity.player.Player;
-import entity.enemy.Enemy;
-import entity.player.classes.Mage;
-import entity.player.classes.Priest;
-import entity.player.classes.Tank;
-import entity.player.classes.Warrior;
-import lib.Hitbox;
 import net.NetInput;
 import net.NetPlayerState;
 import net.NetSnapshot;
 import net.NetworkConfig;
 import net.NetworkMode;
 import net.NetworkSession;
-import save.PlayerSaveState;
 import save.SaveState;
 import save.SaveStateManager;
 import tile.LevelManager;
@@ -32,38 +24,14 @@ import tile.TiledMap;
 
 @SuppressWarnings("serial")
 public class GamePanel extends JPanel implements Runnable {
-
   private static final int TILE_SIZE = 32;
   private static final int BASE_WIDTH = 640;
   private static final int BASE_HEIGHT = 360;
   private static final int UPS = 30;
-  private static final double PLAYER_SPAWN_X = 100;
-  private static final double PLAYER_SPAWN_Y = 100;
-  private static final double PARTY_SPAWN_OFFSET = 24;
 
-  private static final int MAX_PLAYERS = 4;
-
-  private static final Color[] PLAYER_COLORS = {
-      new Color(75, 200, 255),
-      new Color(255, 170, 70),
-      new Color(140, 255, 110),
-      new Color(255, 105, 180)
-  };
-
-  private static final PlayerControls[] SLOT_CONTROLS = {
-      new PlayerControls(KeyEvent.VK_W, KeyEvent.VK_S, KeyEvent.VK_A, KeyEvent.VK_D,
-          KeyEvent.VK_SHIFT,
-          new int[] { KeyEvent.VK_1, KeyEvent.VK_2, KeyEvent.VK_3, KeyEvent.VK_4 }),
-      new PlayerControls(KeyEvent.VK_W, KeyEvent.VK_S, KeyEvent.VK_A, KeyEvent.VK_D,
-          KeyEvent.VK_SHIFT,
-          new int[] { KeyEvent.VK_1, KeyEvent.VK_2, KeyEvent.VK_3, KeyEvent.VK_4 }),
-      new PlayerControls(KeyEvent.VK_W, KeyEvent.VK_S, KeyEvent.VK_A, KeyEvent.VK_D,
-          KeyEvent.VK_SHIFT,
-          new int[] { KeyEvent.VK_1, KeyEvent.VK_2, KeyEvent.VK_3, KeyEvent.VK_4 }),
-      new PlayerControls(KeyEvent.VK_W, KeyEvent.VK_S, KeyEvent.VK_A, KeyEvent.VK_D,
-          KeyEvent.VK_SHIFT,
-          new int[] { KeyEvent.VK_1, KeyEvent.VK_2, KeyEvent.VK_3, KeyEvent.VK_4 })
-  };
+  static final double PLAYER_SPAWN_X = 100;
+  static final double PLAYER_SPAWN_Y = 100;
+  static final double PARTY_SPAWN_OFFSET = 24;
 
   private static final int[] JOIN_KEYS = {
       KeyEvent.VK_F1,
@@ -79,18 +47,18 @@ public class GamePanel extends JPanel implements Runnable {
 
   private final NetworkMode networkMode;
   private final NetworkSession networkSession;
-  private final KeyHandler[] slotKeyHandlers = new KeyHandler[MAX_PLAYERS];
-
-  private Thread gameThread;
   private final KeyHandler kh = new KeyHandler();
-  private final List<Player> players = new ArrayList<>();
-  private final List<Enemy> enemies = new ArrayList<>();
-  private final boolean[] joinedSlots = new boolean[MAX_PLAYERS];
-  private String enemyMapId;
-
+  private final PlayerRoster playerRoster;
   private final LevelManager levelManager = new LevelManager();
   private final SaveStateManager saveStateManager = new SaveStateManager();
-  private NetSnapshot clientSnapshot = new NetSnapshot("", List.of());
+  private final GameRenderer gameRenderer = new GameRenderer();
+  private final WorldSimulator worldSimulator;
+
+  private Thread gameThread;
+  private NetSnapshot clientSnapshot = new NetSnapshot("", java.util.List.of(), java.util.List.of());
+  private boolean peerDisconnected = false;
+  private long lastReconnectAttempt = 0;
+  private static final long RECONNECT_INTERVAL_MS = 2000;
 
   public GamePanel() {
     this(NetworkConfig.local());
@@ -99,10 +67,9 @@ public class GamePanel extends JPanel implements Runnable {
   public GamePanel(NetworkConfig networkConfig) {
     this.networkMode = networkConfig.mode();
     this.networkSession = networkMode.isLocal() ? null : new NetworkSession(networkConfig);
-    initializeSlotKeyHandlers();
+    this.playerRoster = new PlayerRoster(networkMode, kh);
 
     Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-
     int scale = Math.max(1, Math.min(screenSize.width / BASE_WIDTH, screenSize.height / BASE_HEIGHT));
 
     actualTileSize = TILE_SIZE * scale;
@@ -115,26 +82,16 @@ public class GamePanel extends JPanel implements Runnable {
     addKeyListener(kh);
     setFocusable(true);
 
-    boolean[] mapExists = new boolean[MAP_IDS.length];
-    for (int i = 0; i < MAP_IDS.length; i++) {
-      String mapPath = GamePaths.mapResource(MAP_IDS[i]);
-      mapExists[i] = resourceExists(mapPath);
-      if (mapExists[i]) {
-        levelManager.registerLevel(MAP_IDS[i], mapPath);
-      }
-    }
-
-    try {
-      if (levelManager.hasLevels()) {
-        String startingMap = mapExists[0] ? MAP_IDS[0] : (mapExists[1] ? MAP_IDS[1] : MAP_IDS[2]);
-        levelManager.setCurrentMap(startingMap);
-      }
-    } catch (RuntimeException ex) {
-      System.err.println("Level init failed: " + ex.getMessage());
-    }
+    registerMaps();
+    worldSimulator = new WorldSimulator(levelManager, playerRoster.players(), screenWidth, screenHeight);
 
     if (!networkMode.isPeer()) {
       joinSlot(0);
+    }
+
+    // Set up restore listener for host mode
+    if (networkSession != null && networkMode.isHost()) {
+      networkSession.setRestoreListener(this::handlePeerRestore);
     }
   }
 
@@ -146,7 +103,6 @@ public class GamePanel extends JPanel implements Runnable {
   @Override
   public void run() {
     final double drawInterval = 1_000_000_000.0 / UPS;
-
     long lastTickNs = System.nanoTime();
     double pendingFrames = 0.0;
     double dtPerFrame = 1.0 / UPS;
@@ -155,7 +111,6 @@ public class GamePanel extends JPanel implements Runnable {
       long currentNs = System.nanoTime();
       long elapsedNs = currentNs - lastTickNs;
       lastTickNs = currentNs;
-
       pendingFrames += elapsedNs / drawInterval;
 
       while (pendingFrames >= 1) {
@@ -189,10 +144,11 @@ public class GamePanel extends JPanel implements Runnable {
     handleSaveHotkeys();
 
     if (networkMode.isHost()) {
-      syncNetworkPlayers();
+      ensureConnectedSlotsJoined();
+      playerRoster.syncNetworkPlayers(networkSession);
     }
 
-    simulateWorld(dt);
+    worldSimulator.simulate(dt);
 
     if (networkMode.isP2P()) {
       networkSession.publishSnapshot(buildSnapshot());
@@ -200,191 +156,98 @@ public class GamePanel extends JPanel implements Runnable {
   }
 
   private void updatePeer() {
+    refreshPeerConnection();
+    boolean wasDisconnected = peerDisconnected;
+    peerDisconnected = networkSession != null && !networkSession.isConnected();
+    handlePeerConnectionTransition(wasDisconnected);
+
+    if (peerDisconnected) {
+      runDisconnectedPeerSimulation();
+    } else {
+      syncConnectedPeerSnapshot();
+    }
+  }
+
+  private void refreshPeerConnection() {
+    if (networkSession == null) {
+      return;
+    }
+    networkSession.updateConnectionState();
+    if (networkSession.isConnected()) {
+      return;
+    }
+
+    long now = System.currentTimeMillis();
+    if (now - lastReconnectAttempt >= RECONNECT_INTERVAL_MS) {
+      networkSession.attemptReconnect();
+      lastReconnectAttempt = now;
+    }
+  }
+
+  private void handlePeerConnectionTransition(boolean wasDisconnected) {
+    if (networkSession == null) {
+      return;
+    }
+    if (peerDisconnected && !wasDisconnected) {
+      System.out.println("[P2P] Transitioning to local simulation mode.");
+      List<Player> localPlayers = playerRoster.players();
+      if (!localPlayers.isEmpty()) {
+        networkSession.setRestoreState(localPlayers.get(0).createPlayerSaveState());
+      }
+      return;
+    }
+    if (!peerDisconnected && wasDisconnected) {
+      System.out.println("[P2P] Reconnected to host, sending restore state.");
+      networkSession.sendRestoreStateIfNeeded();
+    }
+  }
+
+  private void runDisconnectedPeerSimulation() {
+    handleJoinHotkeys();
+    handleSaveHotkeys();
+    worldSimulator.simulate(1.0 / UPS);
+    if (!playerRoster.isJoined(0)) {
+      joinSlot(0);
+    }
+    clientSnapshot = buildSnapshot();
+  }
+
+  private void syncConnectedPeerSnapshot() {
     NetInput input = NetInput.fromClientKeys(kh);
     networkSession.sendInput(input);
+    networkSession.sendRestoreStateIfNeeded();
 
-    handleSaveHotkeys();
-
-    // Process incoming snapshots from peers
     NetSnapshot incoming = networkSession.latestSnapshot();
-    if (incoming != null) {
-      clientSnapshot = incoming;
-      if (!incoming.mapId().isBlank() && levelManager.hasLevel(incoming.mapId())
-          && (levelManager.getCurrentMapId() == null || !incoming.mapId().equals(levelManager.getCurrentMapId()))) {
-        levelManager.setCurrentMap(incoming.mapId());
-      }
+    if (incoming == null) {
+      return;
     }
+
+    clientSnapshot = incoming;
+    syncRemoteMap(incoming);
   }
 
-  private void simulateWorld(double dt) {
-    TiledMap map = levelManager.getCurrentMap();
-    ensureEnemiesForCurrentMap(map);
-    refreshFriendlyFireFlags(map);
-
-    for (Player player : players) {
-      double oldX = player.getX();
-      double oldY = player.getY();
-
-      player.update(dt);
-
-      if (map != null && map.collides(player.getHitbox())) {
-        player.setWorldPosition(oldX, oldY);
-      }
-
-      if (map != null) {
-        player.clampToBounds(map.getPixelWidth(), map.getPixelHeight());
-      } else {
-        player.clampToBounds(screenWidth, screenHeight);
-      }
+  private void syncRemoteMap(NetSnapshot incoming) {
+    if (incoming.mapId().isBlank() || !levelManager.hasLevel(incoming.mapId())) {
+      return;
     }
-
-    for (Player player : players) {
-      if (levelManager.updatePortals(player, players)) {
-        map = levelManager.getCurrentMap();
-        ensureEnemiesForCurrentMap(map);
-        refreshFriendlyFireFlags(map);
-        break;
-      }
-    }
-
-    for (Enemy enemy : enemies) {
-      double oldX = enemy.getX();
-      double oldY = enemy.getY();
-      enemy.update(dt, map, players);
-      if (map != null && map.collides(enemy.getHitbox())) {
-        enemy.setWorldPosition(oldX, oldY);
-      }
-    }
-
-    refreshFriendlyFireFlags(map);
-  }
-
-  private void ensureEnemiesForCurrentMap(TiledMap map) {
     String currentMapId = levelManager.getCurrentMapId();
-    if (map == null || currentMapId == null || currentMapId.isBlank()) {
-      enemies.clear();
-      enemyMapId = null;
-      return;
+    if (currentMapId == null || !incoming.mapId().equals(currentMapId)) {
+      levelManager.setCurrentMap(incoming.mapId());
     }
-    if (currentMapId.equals(enemyMapId) && !enemies.isEmpty()) {
-      return;
-    }
-
-    enemies.clear();
-    enemyMapId = currentMapId;
-
-    List<int[]> spawnTiles = map.getEnemySpawnTilesByVariant();
-    for (int[] spawn : spawnTiles) {
-      int tileX = spawn[0];
-      int tileY = spawn[1];
-      int variant = spawn[2];
-      double spawnX = tileX * map.getTileWidth() + (map.getTileWidth() * 0.5);
-      double spawnY = tileY * map.getTileHeight() + (map.getTileHeight() * 0.5);
-      enemies.add(new Enemy(spawnX, spawnY, variant));
-    }
-  }
-
-  private void refreshFriendlyFireFlags(TiledMap map) {
-    for (Player player : players) {
-      boolean enabled = map != null && map.isFriendlyFireEnabled(player.getHitbox());
-      player.setFriendlyFireEnabled(enabled);
-    }
-  }
-
-  @Override
-  protected void paintComponent(Graphics g) {
-    super.paintComponent(g);
-
-    Graphics2D g2 = (Graphics2D) g;
-    TiledMap map = levelManager.getCurrentMap();
-    if (map != null) {
-      map.draw(g2);
-    }
-
-    if (networkMode.isPeer()) {
-      for (NetPlayerState p : clientSnapshot.players()) {
-        g2.setColor(PLAYER_COLORS[Math.max(0, Math.min(PLAYER_COLORS.length - 1, p.slot()))]);
-        g2.fillRect((int) p.x(), (int) p.y(), (int) p.width(), (int) p.height());
-      }
-    } else {
-      for (Player player : players) {
-        int slot = slotForClassName(player.getClass().getName());
-        g2.setColor(PLAYER_COLORS[Math.max(0, Math.min(PLAYER_COLORS.length - 1, slot))]);
-        Hitbox hb = player.getHitbox();
-        g2.fillRect((int) hb.getLeft(), (int) hb.getTop(), (int) hb.getWidth(), (int) hb.getHeight());
-      }
-      g2.setColor(new Color(210, 60, 60));
-      for (Enemy enemy : enemies) {
-        Hitbox hb = enemy.getHitbox();
-        g2.fillRect((int) hb.getLeft(), (int) hb.getTop(), (int) hb.getWidth(), (int) hb.getHeight());
-      }
-    }
-
-    g2.dispose();
-  }
-
-  private boolean resourceExists(String path) {
-    return Thread.currentThread().getContextClassLoader().getResource(path) != null;
   }
 
   private void handleJoinHotkeys() {
-    for (int slot = 0; slot < MAX_PLAYERS; slot++) {
-      if (kh.isTriggered(JOIN_KEYS[slot])) {
-        if (joinSlot(slot) != null) {
-          System.out.println("Player joined: slot " + (slot + 1));
-        }
+    for (int slot = 0; slot < JOIN_KEYS.length; slot++) {
+      if (kh.isTriggered(JOIN_KEYS[slot]) && joinSlot(slot) != null) {
+        System.out.println("Player joined: slot " + (slot + 1));
       }
     }
-  }
-
-  private Player joinSlot(int slot) {
-    if (slot < 0 || slot >= MAX_PLAYERS || joinedSlots[slot]) {
-      return null;
-    }
-
-    double spawnX = PLAYER_SPAWN_X + (slot % 2) * PARTY_SPAWN_OFFSET;
-    double spawnY = PLAYER_SPAWN_Y + (slot / 2) * PARTY_SPAWN_OFFSET;
-
-    Player player = createPlayerForSlot(slot, spawnX, spawnY);
-    if (player == null) {
-      return null;
-    }
-
-    players.add(player);
-    joinedSlots[slot] = true;
-    syncPartyRefs();
-    return player;
-  }
-
-  private Player createPlayerForSlot(int slot, double x, double y) {
-    KeyHandler slotKeyHandler = slotKeyHandlers[slot];
-    return switch (slot) {
-      case 0 -> new Mage(x, y, slotKeyHandler, SLOT_CONTROLS[0]);
-      case 1 -> new Warrior(x, y, slotKeyHandler, SLOT_CONTROLS[1]);
-      case 2 -> new Tank(x, y, slotKeyHandler, SLOT_CONTROLS[2]);
-      case 3 -> new Priest(x, y, slotKeyHandler, SLOT_CONTROLS[3]);
-      default -> null;
-    };
-  }
-
-  private int slotForClassName(String className) {
-    return switch (className) {
-      case "entity.player.classes.Mage" -> 0;
-      case "entity.player.classes.Warrior" -> 1;
-      case "entity.player.classes.Tank" -> 2;
-      case "entity.player.classes.Priest" -> 3;
-      default -> -1;
-    };
   }
 
   private void handleSaveHotkeys() {
     if (kh.isTriggered(KeyEvent.VK_F5)) {
-      List<PlayerSaveState> snapshots = new ArrayList<>(players.size());
-      for (Player player : players) {
-        snapshots.add(player.createPlayerSaveState());
-      }
-
-      SaveState save = new SaveState(levelManager.getCurrentMapId() == null ? "" : levelManager.getCurrentMapId(), snapshots);
+      SaveState save = new SaveState(levelManager.getCurrentMapId() == null ? "" : levelManager.getCurrentMapId(),
+          playerRoster.createSaveStates());
       try {
         saveStateManager.saveQuick(save);
         System.out.println("Saved quicksave.");
@@ -400,9 +263,7 @@ public class GamePanel extends JPanel implements Runnable {
       }
 
       try {
-        SaveState save = saveStateManager.loadQuick();
-        applySaveState(save);
-
+        applySaveState(saveStateManager.loadQuick());
         System.out.println("Loaded quicksave.");
       } catch (RuntimeException ex) {
         System.err.println("Load failed: " + ex.getMessage());
@@ -415,108 +276,86 @@ public class GamePanel extends JPanel implements Runnable {
       levelManager.setCurrentMap(save.mapId());
     }
 
-    players.clear();
-    clearJoinedSlots();
-
-    for (PlayerSaveState snapshot : save.players()) {
-      int slot = slotForClassName(snapshot.playerClassName());
-      if (slot < 0 || joinedSlots[slot]) {
-        continue;
-      }
-
-      Player player = createPlayerForSlot(slot, snapshot.x(), snapshot.y());
-      if (player == null) {
-        continue;
-      }
-
-      if (!player.loadPlayerSaveState(snapshot)) {
-        continue;
-      }
-      players.add(player);
-      joinedSlots[slot] = true;
-    }
-
-    if (players.isEmpty()) {
-      joinSlot(0);
-    }
-
     TiledMap current = levelManager.getCurrentMap();
     int boundW = current != null ? current.getPixelWidth() : screenWidth;
     int boundH = current != null ? current.getPixelHeight() : screenHeight;
-    for (Player player : players) {
-      player.clampToBounds(boundW, boundH);
-    }
-    syncPartyRefs();
+    playerRoster.restorePlayers(save.players(), boundW, boundH, PLAYER_SPAWN_X, PLAYER_SPAWN_Y);
   }
 
   private NetSnapshot buildSnapshot() {
-    List<NetPlayerState> states = new ArrayList<>(players.size());
-    for (Player player : players) {
-      int slot = slotForClassName(player.getClass().getName());
-      Hitbox hb = player.getHitbox();
-      states.add(new NetPlayerState(slot, hb.getLeft(), hb.getTop(), hb.getWidth(), hb.getHeight()));
+    return new NetSnapshot(levelManager.getCurrentMapId() == null ? "" : levelManager.getCurrentMapId(),
+        playerRoster.buildNetStates(), worldSimulator.buildNetStates());
+  }
+
+  /**
+   * Called when a peer reconnects and sends their restore state.
+   * Restores the peer's local player with their accumulated stats/position.
+   */
+  private void handlePeerRestore(int slot, save.PlayerSaveState state) {
+    TiledMap current = levelManager.getCurrentMap();
+    int boundW = current != null ? current.getPixelWidth() : screenWidth;
+    int boundH = current != null ? current.getPixelHeight() : screenHeight;
+
+    playerRoster.restorePlayerFromState(slot, state, boundW, boundH);
+    System.out.println("[P2P] Restored peer in slot " + slot + " at (" + state.x() + ", " + state.y() + ")");
+  }
+
+  @Override
+  protected void paintComponent(Graphics g) {
+    super.paintComponent(g);
+
+    Graphics2D g2 = (Graphics2D) g;
+    TiledMap map = levelManager.getCurrentMap();
+    if (networkMode.isPeer()) {
+      gameRenderer.renderRemote(g2, map, clientSnapshot);
+      if (peerDisconnected) {
+        g2.setColor(new Color(1, 0, 0, 0.7f));
+        g2.fillRect(0, 0, screenWidth, 20);
+        g2.setColor(java.awt.Color.WHITE);
+        g2.drawString("DISCONNECTED - Running in local mode", 10, 14);
+      }
+    } else {
+      gameRenderer.renderLocal(g2, map, playerRoster.players(), worldSimulator.enemies());
     }
-    return new NetSnapshot(levelManager.getCurrentMapId() == null ? "" : levelManager.getCurrentMapId(), states);
+    g2.dispose();
   }
 
-  private void clearJoinedSlots() {
-    Arrays.fill(joinedSlots, false);
-  }
-
-  private void initializeSlotKeyHandlers() {
-    for (int slot = 0; slot < MAX_PLAYERS; slot++) {
-      slotKeyHandlers[slot] = (slot == 0 || networkMode.isLocal()) ? kh : new KeyHandler();
-    }
-  }
-
-  private void syncNetworkPlayers() {
-    boolean[] connected = new boolean[MAX_PLAYERS];
+  private void ensureConnectedSlotsJoined() {
     for (int slot : networkSession.connectedSlots()) {
-      connected[slot] = true;
-      if (!joinedSlots[slot]) {
+      if (!playerRoster.isJoined(slot)) {
         joinSlot(slot);
       }
-      applyRemoteInput(slot, networkSession.remoteInputs().get(slot));
     }
-    for (int slot = 1; slot < MAX_PLAYERS; slot++) {
-      if (!connected[slot]) {
-        applyRemoteInput(slot, null);
+  }
+
+  private Player joinSlot(int slot) {
+    double spawnX = PLAYER_SPAWN_X + (slot % 2) * PARTY_SPAWN_OFFSET;
+    double spawnY = PLAYER_SPAWN_Y + (slot / 2) * PARTY_SPAWN_OFFSET;
+    return playerRoster.joinSlot(slot, spawnX, spawnY);
+  }
+
+  private void registerMaps() {
+    boolean[] mapExists = new boolean[MAP_IDS.length];
+    for (int i = 0; i < MAP_IDS.length; i++) {
+      String mapPath = GamePaths.mapResource(MAP_IDS[i]);
+      mapExists[i] = resourceExists(mapPath);
+      if (mapExists[i]) {
+        levelManager.registerLevel(MAP_IDS[i], mapPath);
       }
     }
+
+    try {
+      if (levelManager.hasLevels()) {
+        String startingMap = mapExists[0] ? MAP_IDS[0] : (mapExists[1] ? MAP_IDS[1] : MAP_IDS[2]);
+        levelManager.setCurrentMap(startingMap);
+      }
+    } catch (RuntimeException ex) {
+      System.err.println("Level init failed: " + ex.getMessage());
+    }
   }
 
-  private void applyRemoteInput(int slot, NetInput input) {
-    if (slot <= 0 || slot >= MAX_PLAYERS) {
-      return;
-    }
-    KeyHandler slotKeyHandler = slotKeyHandlers[slot];
-    PlayerControls controls = SLOT_CONTROLS[slot];
-    int[] skillKeys = controls.skillKeys();
-    boolean up = input != null && input.up();
-    boolean down = input != null && input.down();
-    boolean left = input != null && input.left();
-    boolean right = input != null && input.right();
-    boolean item = input != null && input.item();
-    boolean skill1 = input != null && input.skill1();
-    boolean skill2 = input != null && input.skill2();
-    boolean skill3 = input != null && input.skill3();
-    boolean skill4 = input != null && input.skill4();
-
-    slotKeyHandler.setVirtualDown(controls.upKey(), up);
-    slotKeyHandler.setVirtualDown(controls.downKey(), down);
-    slotKeyHandler.setVirtualDown(controls.leftKey(), left);
-    slotKeyHandler.setVirtualDown(controls.rightKey(), right);
-    slotKeyHandler.setVirtualDown(controls.itemModifierKey(), item);
-    slotKeyHandler.setVirtualDown(skillKeys[0], skill1);
-    slotKeyHandler.setVirtualDown(skillKeys[1], skill2);
-    slotKeyHandler.setVirtualDown(skillKeys[2], skill3);
-    slotKeyHandler.setVirtualDown(skillKeys[3], skill4);
-  }
-
-  private void syncPartyRefs() {
-    for (Player player : players) {
-      player.setParty(players);
-    }
+  private boolean resourceExists(String path) {
+    return Thread.currentThread().getContextClassLoader().getResource(path) != null;
   }
 
   public void shutdown() {

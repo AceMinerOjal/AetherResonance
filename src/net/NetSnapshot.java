@@ -4,5 +4,6 @@ import java.util.List;
 
 public record NetSnapshot(
     String mapId,
-    List<NetPlayerState> players) {
+    List<NetPlayerState> players,
+    List<NetEnemyState> enemies) {
 }

@@ -48,7 +48,7 @@ import org.lwjgl.vulkan.VkDeviceQueueCreateInfo;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkInstanceCreateInfo;
 import org.lwjgl.vulkan.VkPhysicalDevice;
-import org.lwjgl.vulkan.VkPhysicalDeviceQueueFamilyProperties;
+import org.lwjgl.vulkan.VkQueueFamilyProperties;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 
 public final class VulkanShaderInitializer implements AutoCloseable {
@@ -156,8 +156,8 @@ public final class VulkanShaderInitializer implements AutoCloseable {
     IntBuffer count = stack.ints(0);
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, count, null);
 
-    VkPhysicalDeviceQueueFamilyProperties.Buffer queueFamilies =
-        VkPhysicalDeviceQueueFamilyProperties.calloc(count.get(0), stack);
+    VkQueueFamilyProperties.Buffer queueFamilies =
+        VkQueueFamilyProperties.calloc(count.get(0), stack);
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, count, queueFamilies);
 
     for (int i = 0; i < queueFamilies.capacity(); i++) {

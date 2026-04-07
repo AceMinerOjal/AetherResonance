@@ -12,6 +12,7 @@ public abstract class Entity {
   protected double x, y;
   protected final double SPEED = 30;
   protected final Hitbox hitbox;
+  protected String appearanceId = "";
 
   protected BufferedImage walkSheet;
   protected BufferedImage actionSheet;
@@ -54,6 +55,10 @@ public abstract class Entity {
     }
   }
 
+  public void updateAnimation(double dt) {
+    updateAnimation((float) dt);
+  }
+
   public int getSpriteRow() {
     int baseRow = switch (getCurrentAnimation()) {
       case IDLE -> 0;
@@ -87,6 +92,10 @@ public abstract class Entity {
     return currentFrame;
   }
 
+  public Direction getDirection() {
+    return direction;
+  }
+
   public void move(Direction dir, double dt) {
     direction = dir;
 
@@ -105,57 +114,11 @@ public abstract class Entity {
   }
 
   public void draw(Graphics2D g) {
-    BufferedImage currentSheet;
-    int rowOffset;
-
-    switch (getCurrentAnimation()) {
-      case IDLE -> {
-        currentSheet = walkSheet;
-        rowOffset = 0; // Assuming Idle is the first set of rows in walkSheet
-      }
-      case WALK -> {
-        currentSheet = walkSheet;
-        rowOffset = 3; // Offset if Walk rows are below Idle
-      }
-      case ATTACK -> {
-        currentSheet = actionSheet;
-        rowOffset = 0;
-      }
-      case DIE -> {
-        currentSheet = actionSheet;
-        rowOffset = 3;
-      }
-      default -> {
-        currentSheet = walkSheet;
-        rowOffset = 0;
-      }
+    if (!hasSpriteSheets()) {
+      return;
     }
-
-    int directionOffset = switch (direction) {
-      case DOWN -> 0;
-      case UP -> 1;
-      case LEFT, RIGHT -> 2;
-    };
-
-    int row = rowOffset + directionOffset;
-
-    renderFrame(g, currentSheet, row);
-  }
-
-  private void renderFrame(Graphics2D g, BufferedImage sheet, int row) {
-    int tw = SPRITE_WIDTH;
-    int th = SPRITE_HEIGHT;
-
-    int sx = getCurrentFrame() * tw;
-    int sy = row * th;
-
-    if (direction == Direction.RIGHT) {
-      g.drawImage(sheet, (int) x, (int) y, (int) x + tw, (int) y + th,
-          sx + tw, sy, sx, sy + th, null);
-    } else {
-      g.drawImage(sheet, (int) x, (int) y, (int) x + tw, (int) y + th,
-          sx, sy, sx + tw, sy + th, null);
-    }
+    SpriteFrameRenderer.draw(g, new SpriteAssets(walkSheet, actionSheet), getCurrentAnimation(), direction,
+        getCurrentFrame(), x, y, SPRITE_WIDTH, SPRITE_HEIGHT);
   }
 
   protected void setPosition(double x, double y) {
@@ -180,5 +143,28 @@ public abstract class Entity {
 
   public double getY() {
     return y;
+  }
+
+  public boolean hasSpriteSheets() {
+    return walkSheet != null && actionSheet != null;
+  }
+
+  public String getAppearanceId() {
+    return appearanceId;
+  }
+
+  public int getSpriteWidth() {
+    return SPRITE_WIDTH;
+  }
+
+  public int getSpriteHeight() {
+    return SPRITE_HEIGHT;
+  }
+
+  protected void loadPlayerSprites(String appearanceId) {
+    this.appearanceId = appearanceId;
+    SpriteAssets assets = SpriteAssets.loadPlayer(appearanceId);
+    this.walkSheet = assets.walkSheet();
+    this.actionSheet = assets.actionSheet();
   }
 }
