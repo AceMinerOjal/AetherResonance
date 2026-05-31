@@ -9,6 +9,7 @@ import entity.Health;
 import entity.Dialectics;
 import entity.player.Player;
 import entity.statusEffects.EffectTarget;
+import entity.statusEffects.StatusEffect;
 import lib.Entity;
 import tile.TiledMap;
 
@@ -22,6 +23,7 @@ public abstract class Enemy extends Entity implements EffectTarget {
   protected Dialectics ap;
   protected Dialectics defence;
   protected boolean alive = true;
+  protected final List<StatusEffect> activeStatusEffects = new ArrayList<>();
 
   private final List<int[]> path = new ArrayList<>();
   private final int movementVariant;
@@ -78,11 +80,35 @@ public abstract class Enemy extends Entity implements EffectTarget {
     return alive;
   }
 
+  @Override
+  public void addStatusEffect(StatusEffect effect) {
+    for (StatusEffect active : activeStatusEffects) {
+      if (active.getName().equals(effect.getName())) {
+        active.start();
+        return;
+      }
+    }
+    effect.apply(this);
+    activeStatusEffects.add(effect);
+  }
+
+  @Override
+  public void removeStatusEffect(StatusEffect effect) {
+    activeStatusEffects.remove(effect);
+  }
+
   public void update(double dt, TiledMap map, List<Player> players) {
     if (!alive) return;
     hp.update(dt);
     ap.update(dt);
     defence.update(dt);
+
+    for (int i = activeStatusEffects.size() - 1; i >= 0; i--) {
+      activeStatusEffects.get(i).update(dt);
+      if (!activeStatusEffects.get(i).isActive()) {
+        activeStatusEffects.remove(i);
+      }
+    }
 
     updateAnimation((float) dt);
     if (map == null || players == null || players.isEmpty()) {

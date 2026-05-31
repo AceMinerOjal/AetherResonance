@@ -341,8 +341,7 @@ public abstract class Player extends Entity implements EffectTarget {
       case OBSCURE -> new ShadowObscure(4.0, -0.35, -0.4);
     };
 
-    effect.apply(target);
-    activeStatusEffects.add(effect);
+    target.addStatusEffect(effect);
   }
 
   protected void inflictConfiguredStatusEffectNearby(double radius, double power) {
@@ -459,6 +458,24 @@ public abstract class Player extends Entity implements EffectTarget {
   @Override
   public double getDamageTakenMultiplier() {
     return damageTakenMultiplier;
+  }
+
+  @Override
+  public void addStatusEffect(StatusEffect effect) {
+    // Refresh policy: if effect of same name exists, restart it instead of adding new one
+    for (StatusEffect active : activeStatusEffects) {
+      if (active.getName().equals(effect.getName())) {
+        active.start(); // Restarts the timer
+        return;
+      }
+    }
+    effect.apply(this);
+    activeStatusEffects.add(effect);
+  }
+
+  @Override
+  public void removeStatusEffect(StatusEffect effect) {
+    activeStatusEffects.remove(effect);
   }
 
   @Override

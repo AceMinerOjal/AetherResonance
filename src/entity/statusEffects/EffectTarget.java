@@ -33,6 +33,12 @@ public interface EffectTarget {
     return 0;
   }
 
+  default void addStatusEffect(StatusEffect effect) {
+  }
+
+  default void removeStatusEffect(StatusEffect effect) {
+  }
+
   default List<Entity> getNearbyEntities(double radius) {
     return Collections.emptyList();
   }
