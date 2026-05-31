@@ -59,6 +59,7 @@ public class PlayerRoster {
     if (player == null) {
       return null;
     }
+    player.setSlot(slot);
 
     players.add(player);
     joinedSlots[slot] = true;
@@ -79,16 +80,16 @@ public class PlayerRoster {
     players.clear();
     Arrays.fill(joinedSlots, false);
 
-    for (PlayerSaveState snapshot : snapshots) {
-      int slot = slotForClassName(snapshot.playerClassName());
-      if (slot < 0 || joinedSlots[slot]) {
-        continue;
-      }
+    for (int i = 0; i < snapshots.size(); i++) {
+      PlayerSaveState snapshot = snapshots.get(i);
+      int slot = i; // Map save index to slot index
+      if (slot >= MAX_PLAYERS) break;
 
       Player player = createPlayerForSlot(slot, snapshot.x(), snapshot.y());
       if (player == null || !player.loadPlayerSaveState(snapshot)) {
         continue;
       }
+      player.setSlot(slot);
 
       players.add(player);
       joinedSlots[slot] = true;
@@ -108,7 +109,7 @@ public class PlayerRoster {
     List<NetPlayerState> states = new ArrayList<>(players.size());
     for (Player player : players) {
       states.add(new NetPlayerState(
-          slotForClassName(player.getClass().getName()),
+          player.getSlot(),
           player.getAppearanceId(),
           player.getX(),
           player.getY(),
@@ -151,14 +152,11 @@ public class PlayerRoster {
       return;
     }
 
-    String className = state.playerClassName();
-    int existingSlot = slotForClassName(className);
-    if (existingSlot >= 0) {
-      removePlayerInSlot(existingSlot);
-    }
+    removePlayerInSlot(slot);
 
     Player player = createPlayerForSlot(slot, state.x(), state.y());
     if (player != null && player.loadPlayerSaveState(state)) {
+      player.setSlot(slot);
       players.add(player);
       joinedSlots[slot] = true;
       player.clampToBounds(boundWidth, boundHeight);
@@ -179,7 +177,7 @@ public class PlayerRoster {
 
   private Player findPlayerBySlot(int slot) {
     for (Player player : players) {
-      if (slotForClassName(player.getClass().getName()) == slot) {
+      if (player.getSlot() == slot) {
         return player;
       }
     }

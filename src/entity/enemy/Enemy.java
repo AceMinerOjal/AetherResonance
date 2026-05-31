@@ -286,65 +286,55 @@ public abstract class Enemy extends Entity implements EffectTarget {
 
     int w = map.getWidthTiles();
     int h = map.getHeightTiles();
-    boolean[][] visited = new boolean[h][w];
-    int[][] prevX = new int[h][w];
-    int[][] prevY = new int[h][w];
 
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        prevX[y][x] = -1;
-        prevY[y][x] = -1;
-      }
-    }
+    // Use a flat array and primitive storage to reduce allocations
+    int[] dist = new int[w * h];
+    int[] prev = new int[w * h];
+    java.util.Arrays.fill(dist, Integer.MAX_VALUE);
+    java.util.Arrays.fill(prev, -1);
 
-    ArrayDeque<int[]> queue = new ArrayDeque<>();
-    queue.add(new int[] { sx, sy });
-    visited[sy][sx] = true;
+    java.util.PriorityQueue<Node> pq = new java.util.PriorityQueue<>();
+    dist[sy * w + sx] = 0;
+    pq.add(new Node(sx, sy, 0, Math.abs(gx - sx) + Math.abs(gy - sy)));
 
     int[] dirs = { 1, 0, -1, 0, 0, 1, 0, -1 };
-    while (!queue.isEmpty()) {
-      int[] node = queue.removeFirst();
-      int x = node[0];
-      int y = node[1];
-      if (x == gx && y == gy) {
-        break;
-      }
+    while (!pq.isEmpty()) {
+      Node current = pq.poll();
+      if (current.x == gx && current.y == gy) break;
+      if (current.g > dist[current.y * w + current.x]) continue;
+
       for (int i = 0; i < dirs.length; i += 2) {
-        int nx = x + dirs[i];
-        int ny = y + dirs[i + 1];
-        if (nx < 0 || ny < 0 || nx >= w || ny >= h) {
-          continue;
+        int nx = current.x + dirs[i];
+        int ny = current.y + dirs[i + 1];
+
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h && isWalkable(map, nx, ny)) {
+          int newG = current.g + 1;
+          if (newG < dist[ny * w + nx]) {
+            dist[ny * w + nx] = newG;
+            prev[ny * w + nx] = current.y * w + current.x;
+            pq.add(new Node(nx, ny, newG, Math.abs(gx - nx) + Math.abs(gy - ny)));
+          }
         }
-        if (visited[ny][nx] || !isWalkable(map, nx, ny)) {
-          continue;
-        }
-        visited[ny][nx] = true;
-        prevX[ny][nx] = x;
-        prevY[ny][nx] = y;
-        queue.addLast(new int[] { nx, ny });
       }
     }
 
-    if (!visited[gy][gx]) {
-      return Collections.emptyList();
-    }
+    if (prev[gy * w + gx] == -1) return Collections.emptyList();
 
     ArrayList<int[]> reversed = new ArrayList<>();
-    int cx = gx;
-    int cy = gy;
-    while (cx >= 0 && cy >= 0) {
-      reversed.add(new int[] { cx, cy });
-      if (cx == sx && cy == sy) {
-        break;
-      }
-      int px = prevX[cy][cx];
-      int py = prevY[cy][cx];
-      cx = px;
-      cy = py;
+    int curr = gy * w + gx;
+    while (curr != -1) {
+      reversed.add(new int[] { curr % w, curr / w });
+      if (curr == sy * w + sx) break;
+      curr = prev[curr];
     }
-
     Collections.reverse(reversed);
     return reversed;
+  }
+
+  private static class Node implements Comparable<Node> {
+    int x, y, g, h;
+    Node(int x, int y, int g, int h) { this.x = x; this.y = y; this.g = g; this.h = h; }
+    @Override public int compareTo(Node o) { return Integer.compare(this.g + this.h, o.g + o.h); }
   }
 
   private boolean isWalkable(TiledMap map, int tileX, int tileY) {

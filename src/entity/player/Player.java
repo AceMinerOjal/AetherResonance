@@ -39,6 +39,7 @@ public abstract class Player extends Entity implements EffectTarget {
   private final PlayerControls controls;
   private final PlayerRace race;
   private final List<Profession> professions;
+  private int slot;
   private final List<Timer> activeEffects = new ArrayList<>();
   private final List<StatusEffect> activeStatusEffects = new ArrayList<>();
   private final List<InventoryItem> inventory = List.of(InventoryItem.ELEMENT_TUNER);
@@ -213,11 +214,20 @@ public abstract class Player extends Entity implements EffectTarget {
     double nextY = y + vy * SPEED * dt;
 
     if (currentMap != null) {
+      // Try X movement
+      hitbox.sync(nextX, y);
+      if (currentMap.collides(hitbox)) {
+        nextX = x;
+      }
+
+      // Try Y movement
       hitbox.sync(nextX, nextY);
       if (currentMap.collides(hitbox)) {
-        hitbox.sync(x, y);
-        return;
+        nextY = y;
       }
+
+      // Sync final position
+      hitbox.sync(nextX, nextY);
     }
     setPosition(nextX, nextY);
   }
@@ -366,6 +376,14 @@ public abstract class Player extends Entity implements EffectTarget {
 
   public void setParty(List<Player> party) {
     this.party = (party == null) ? Collections.emptyList() : party;
+  }
+
+  public int getSlot() {
+    return slot;
+  }
+
+  public void setSlot(int slot) {
+    this.slot = slot;
   }
 
   public SignatureElement getSignatureElement() {

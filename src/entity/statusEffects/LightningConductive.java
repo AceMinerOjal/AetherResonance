@@ -2,12 +2,14 @@ package entity.statusEffects;
 
 import java.util.List;
 import lib.Entity;
+import entity.DamageCalculator;
 
 public class LightningConductive extends StatusEffect {
 
   private final double damagePerTick;
   private final double chainDamageMultiplier;
   private final double chainRadius;
+  private final double durationSeconds;
 
   public LightningConductive(double durationSeconds, double damagePerTick, double tickInterval,
       double chainDamageMultiplier, double chainRadius) {
@@ -15,6 +17,7 @@ public class LightningConductive extends StatusEffect {
     this.damagePerTick = damagePerTick;
     this.chainDamageMultiplier = chainDamageMultiplier;
     this.chainRadius = chainRadius;
+    this.durationSeconds = durationSeconds;
   }
 
   @Override
@@ -35,7 +38,8 @@ public class LightningConductive extends StatusEffect {
       }
       if (e instanceof EffectTarget et) {
         double chained = damagePerTick * chainDamageMultiplier;
-        et.applyDamage(chained);
+        et.addStatusEffect(new LightningConductive(
+            durationSeconds, chained, tickInterval, chainDamageMultiplier, chainRadius));
       }
     }
   }
