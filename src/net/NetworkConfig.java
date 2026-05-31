@@ -8,11 +8,7 @@ public record NetworkConfig(
     int port,
     List<String> peerAddresses) {
 
-  public NetworkConfig(NetworkMode mode, String host, int port) {
-    this(mode, host, port, List.of());
-  }
-
   public static NetworkConfig local() {
-    return new NetworkConfig(NetworkMode.LOCAL, "127.0.0.1", 7777);
+    return new NetworkConfig(NetworkMode.LOCAL, "127.0.0.1", 7777, List.of());
   }
 }

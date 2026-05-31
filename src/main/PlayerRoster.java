@@ -187,13 +187,11 @@ public class PlayerRoster {
   }
 
   public int slotForClassName(String className) {
-    return switch (className) {
-      case "entity.player.classes.Mage" -> 0;
-      case "entity.player.classes.Warrior" -> 1;
-      case "entity.player.classes.Tank" -> 2;
-      case "entity.player.classes.Priest" -> 3;
-      default -> -1;
-    };
+    if (className.equals(Mage.class.getName())) return 0;
+    if (className.equals(Warrior.class.getName())) return 1;
+    if (className.equals(Tank.class.getName())) return 2;
+    if (className.equals(Priest.class.getName())) return 3;
+    return -1;
   }
 
   private Player createPlayerForSlot(int slot, double x, double y) {

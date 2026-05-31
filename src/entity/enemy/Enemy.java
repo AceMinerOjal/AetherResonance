@@ -5,23 +5,65 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import entity.Health;
+import entity.Dialectics;
 import entity.player.Player;
+import entity.statusEffects.EffectTarget;
 import lib.Entity;
 import tile.TiledMap;
 
-public class Enemy extends Entity {
+public abstract class Enemy extends Entity implements EffectTarget {
   private static final int SENSE_RANGE_TILES = 10;
   private static final double SPEED_PX_PER_SEC = 52.0;
   private static final double REPATH_INTERVAL_SEC = 0.2;
+  private static final int PATROL_RADIUS_TILES = 10;
+
+  protected Health hp;
+  protected Dialectics ap;
+  protected Dialectics defence;
+  protected boolean alive = true;
 
   private final List<int[]> path = new ArrayList<>();
   private final int movementVariant;
+  private final int spawnTileX;
+  private final int spawnTileY;
+  protected int level = 1;
   private double repathCooldown;
 
-  public Enemy(double x, double y, int movementVariant) {
+  public Enemy(double x, double y, int movementVariant, int spawnTileX, int spawnTileY) {
     setPosition(x, y);
     setHitbox(20, 24, 6, 8);
     this.movementVariant = movementVariant;
+    this.spawnTileX = spawnTileX;
+    this.spawnTileY = spawnTileY;
+
+    // Default base stats
+    this.hp = new Health(50, 50, 0);
+    this.ap = new Dialectics(10);
+    this.defence = new Dialectics(5);
+  }
+
+  @Override
+  public int getLevel() {
+    return level;
+  }
+
+  @Override
+  public double getAttackPower() {
+    return ap.get();
+  }
+
+  @Override
+  public double getDefence() {
+    return defence.get();
+  }
+
+  @Override
+  public void applyDamage(double amount) {
+    hp.damage(amount);
+    if (hp.get() <= 0) {
+      alive = false;
+    }
   }
 
   public int getMovementVariant() {
@@ -32,8 +74,17 @@ public class Enemy extends Entity {
     setPosition(x, y);
   }
 
+  public boolean isAlive() {
+    return alive;
+  }
+
   public void update(double dt, TiledMap map, List<Player> players) {
-    updateAnimation(dt);
+    if (!alive) return;
+    hp.update(dt);
+    ap.update(dt);
+    defence.update(dt);
+
+    updateAnimation((float) dt);
     if (map == null || players == null || players.isEmpty()) {
       path.clear();
       setAnimation(AnimationState.IDLE);
@@ -54,6 +105,7 @@ public class Enemy extends Entity {
     }
 
     followPath(dt, map);
+    constrainToPatrolRadius(map);
   }
 
   private Player nearestSensedPlayer(TiledMap map, List<Player> players) {
@@ -63,6 +115,15 @@ public class Enemy extends Entity {
 
     for (Player player : players) {
       int[] playerTile = toTile(map, player.getX(), player.getY());
+
+      // Player must be within patrol radius from spawn
+      int pxFromSpawn = playerTile[0] - spawnTileX;
+      int pyFromSpawn = playerTile[1] - spawnTileY;
+      int playerDistSqFromSpawn = pxFromSpawn * pxFromSpawn + pyFromSpawn * pyFromSpawn;
+      if (playerDistSqFromSpawn > PATROL_RADIUS_TILES * PATROL_RADIUS_TILES) {
+        continue;
+      }
+
       int dxTiles = playerTile[0] - enemyTile[0];
       int dyTiles = playerTile[1] - enemyTile[1];
       double tileDistSq = (dxTiles * dxTiles) + (dyTiles * dyTiles);
@@ -80,15 +141,81 @@ public class Enemy extends Entity {
     return best;
   }
 
+  /**
+   * If the enemy has wandered beyond PATROL_RADIUS_TILES from its spawn tile,
+   * redirect it back toward the spawn point.
+   */
+  private void constrainToPatrolRadius(TiledMap map) {
+    int[] enemyTile = toTile(map, x, y);
+    int dx = enemyTile[0] - spawnTileX;
+    int dy = enemyTile[1] - spawnTileY;
+    int distSq = dx * dx + dy * dy;
+
+    if (distSq <= PATROL_RADIUS_TILES * PATROL_RADIUS_TILES) {
+      return; // within patrol radius
+    }
+
+    // Outside radius: set path back toward spawn tile
+    path.clear();
+    List<int[]> returnPath = bfsPath(map, enemyTile[0], enemyTile[1], spawnTileX, spawnTileY);
+    path.addAll(returnPath);
+
+    // If BFS failed, move directly toward spawn as a fallback
+    if (path.isEmpty()) {
+      double targetX = spawnTileX * map.getTileWidth();
+      double targetY = spawnTileY * map.getTileHeight();
+      double ddx = targetX - x;
+      double ddy = targetY - y;
+      double dist = Math.hypot(ddx, ddy);
+      if (dist > 0.5) {
+        double step = Math.min(SPEED_PX_PER_SEC * 0.016, dist); // ~1 frame at 60fps
+        double nx = x + (ddx / dist) * step;
+        double ny = y + (ddy / dist) * step;
+        setPosition(nx, ny);
+        direction = Math.abs(ddx) > Math.abs(ddy)
+            ? (ddx >= 0 ? Direction.RIGHT : Direction.LEFT)
+            : (ddy >= 0 ? Direction.DOWN : Direction.UP);
+        setAnimation(AnimationState.WALK);
+      }
+    }
+  }
+
   private void rebuildPathTo(TiledMap map, Player target) {
     int[] start = toTile(map, x, y);
     int[] goal = toTile(map, target.getX(), target.getY());
+
+    // Don't chase beyond patrol radius from spawn
+    int gxFromSpawn = goal[0] - spawnTileX;
+    int gyFromSpawn = goal[1] - spawnTileY;
+    int goalDistSq = gxFromSpawn * gxFromSpawn + gyFromSpawn * gyFromSpawn;
+    if (goalDistSq > PATROL_RADIUS_TILES * PATROL_RADIUS_TILES) {
+      // Clamp goal toward spawn tile to the edge of the patrol radius
+      int[] clamped = clampToward(spawnTileX, spawnTileY, goal[0], goal[1], PATROL_RADIUS_TILES);
+      goal = clamped;
+    }
+
     List<int[]> nextPath = bfsPath(map, start[0], start[1], goal[0], goal[1]);
     path.clear();
     path.addAll(nextPath);
     if (!path.isEmpty() && path.get(0)[0] == start[0] && path.get(0)[1] == start[1]) {
       path.remove(0);
     }
+  }
+
+  /**
+   * Clamps (tx,ty) toward (ox,oy) so the result is at most maxDist tiles away
+   * from (ox,oy).
+   */
+  private static int[] clampToward(int ox, int oy, int tx, int ty, int maxDist) {
+    int dx = tx - ox;
+    int dy = ty - oy;
+    int distSq = dx * dx + dy * dy;
+    if (distSq <= maxDist * maxDist) {
+      return new int[] { tx, ty };
+    }
+    double dist = Math.sqrt(distSq);
+    double scale = (double) maxDist / dist;
+    return new int[] { ox + (int) Math.round(dx * scale), oy + (int) Math.round(dy * scale) };
   }
 
   private void followPath(double dt, TiledMap map) {

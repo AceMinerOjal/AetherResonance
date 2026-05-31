@@ -5,12 +5,12 @@ import java.util.List;
 import main.KeyHandler;
 import main.PlayerControls;
 
-import entity.player.Health;
+import entity.Dialectics;
+import entity.Health;
 import entity.player.Player;
 import entity.player.PlayerRace;
 import entity.player.Profession;
 import entity.player.SignatureElement;
-import entity.player.stats.Dialectics;
 import entity.player.stats.Mana;
 
 public class Tank extends Player {
@@ -50,7 +50,7 @@ public class Tank extends Player {
     }
     dashForward(28);
     applyTimedApBonus(3, 2);
-    inflictConfiguredStatusEffectNearby(60, ap.get());
+    inflictConfiguredStatusEffectNearby(60, 50); // Power 50
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -68,7 +68,7 @@ public class Tank extends Player {
     }
     restoreMana(3);
     applyTimedDefenceBonus(4, 3);
-    inflictConfiguredStatusEffectNearby(96, ap.get() * 0.9);
+    inflictConfiguredStatusEffectNearby(96, 35); // Power 35
     setAnimation(AnimationState.ATTACK);
   }
 }

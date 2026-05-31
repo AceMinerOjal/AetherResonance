@@ -71,12 +71,14 @@ public final class TiledMapLoader {
     int tileHeight = asInt(object.get("tileheight"), "tilesets[].tileheight");
     int columns = asInt(object.get("columns"), "tilesets[].columns");
     int tileCount = asInt(object.get("tilecount"), "tilesets[].tilecount");
+    int margin = asIntOrDefault(object.get("margin"), 0);
+    int spacing = asIntOrDefault(object.get("spacing"), 0);
     String imagePath = asString(object.get("image"), "tilesets[].image");
     String resolvedImagePath = resolveRelativePath(mapResourcePath, imagePath);
     BufferedImage image = readImageResource(resolvedImagePath);
 
     Set<Integer> solidLocalTileIds = parseSolidTileIds(object.get("tiles"));
-    return new TiledMap.Tileset(firstGid, tileWidth, tileHeight, columns, tileCount, image, solidLocalTileIds);
+    return new TiledMap.Tileset(firstGid, tileWidth, tileHeight, columns, tileCount, margin, spacing, image, solidLocalTileIds);
   }
 
   private static Set<Integer> parseSolidTileIds(Object tilesObject) {
@@ -275,6 +277,12 @@ public final class TiledMapLoader {
       return number.intValue();
     }
     throw new IllegalArgumentException("Expected number for " + field);
+  }
+
+  private static int asIntOrDefault(Object value, int defaultValue) {
+    if (value == null) return defaultValue;
+    if (value instanceof Number number) return number.intValue();
+    throw new IllegalArgumentException("Expected number.");
   }
 
   private static double asDouble(Object value, String field) {

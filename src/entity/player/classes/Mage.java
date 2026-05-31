@@ -5,12 +5,12 @@ import java.util.List;
 import main.KeyHandler;
 import main.PlayerControls;
 
-import entity.player.Health;
+import entity.Dialectics;
+import entity.Health;
 import entity.player.Player;
 import entity.player.PlayerRace;
 import entity.player.Profession;
 import entity.player.SignatureElement;
-import entity.player.stats.Dialectics;
 import entity.player.stats.Mana;
 
 public class Mage extends Player {
@@ -42,7 +42,7 @@ public class Mage extends Player {
     }
     applyTimedApBonus(2 + ap.get() * 0.05, 2.5);
     restoreMana(1.5);
-    inflictConfiguredStatusEffectNearby(72, ap.get());
+    inflictConfiguredStatusEffectNearby(72, 45); // Power 45
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -60,7 +60,7 @@ public class Mage extends Player {
     }
     healSelf(6 + ap.get() * 0.2);
     applyTimedDefenceBonus(3, 3);
-    inflictConfiguredStatusEffectNearby(96, ap.get() * 1.2);
+    inflictConfiguredStatusEffectNearby(96, 65); // Power 65
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -69,7 +69,7 @@ public class Mage extends Player {
       return;
     }
     applyTimedApBonus(8 + ap.get() * 0.1, 5);
-    inflictConfiguredStatusEffectNearby(120, ap.get() * 1.5);
+    inflictConfiguredStatusEffectNearby(120, 110); // Power 110
     setAnimation(AnimationState.ATTACK);
   }
 }

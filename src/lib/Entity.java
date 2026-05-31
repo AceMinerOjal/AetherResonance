@@ -1,21 +1,15 @@
 package lib;
 
-import java.awt.image.BufferedImage;
 import java.util.HashMap;
 import java.util.Map;
-import java.awt.Graphics2D;
 
 public abstract class Entity {
   protected static final int SPRITE_WIDTH = 32;
   protected static final int SPRITE_HEIGHT = 32;
 
   protected double x, y;
-  protected final double SPEED = 30;
   protected final Hitbox hitbox;
   protected String appearanceId = "";
-
-  protected BufferedImage walkSheet;
-  protected BufferedImage actionSheet;
 
   public enum Direction {
     UP, DOWN, LEFT, RIGHT
@@ -55,27 +49,6 @@ public abstract class Entity {
     }
   }
 
-  public void updateAnimation(double dt) {
-    updateAnimation((float) dt);
-  }
-
-  public int getSpriteRow() {
-    int baseRow = switch (getCurrentAnimation()) {
-      case IDLE -> 0;
-      case WALK -> 3;
-      case ATTACK -> 6;
-      case DIE -> 9;
-    };
-
-    int directionOffset = switch (direction) {
-      case DOWN -> 0;
-      case UP -> 1;
-      case LEFT, RIGHT -> 2;
-    };
-
-    return baseRow + directionOffset;
-  }
-
   public void setAnimation(AnimationState state) {
     if (state != currentAnimation) {
       currentAnimation = state;
@@ -94,31 +67,6 @@ public abstract class Entity {
 
   public Direction getDirection() {
     return direction;
-  }
-
-  public void move(Direction dir, double dt) {
-    direction = dir;
-
-    switch (dir) {
-      case UP -> setPosition(x, y - SPEED * dt);
-      case DOWN -> setPosition(x, y + SPEED * dt);
-      case LEFT -> setPosition(x - SPEED * dt, y);
-      case RIGHT -> setPosition(x + SPEED * dt, y);
-    }
-
-    setAnimation(AnimationState.WALK);
-  }
-
-  public void stop() {
-    setAnimation(AnimationState.IDLE);
-  }
-
-  public void draw(Graphics2D g) {
-    if (!hasSpriteSheets()) {
-      return;
-    }
-    SpriteFrameRenderer.draw(g, new SpriteAssets(walkSheet, actionSheet), getCurrentAnimation(), direction,
-        getCurrentFrame(), x, y, SPRITE_WIDTH, SPRITE_HEIGHT);
   }
 
   protected void setPosition(double x, double y) {
@@ -145,10 +93,6 @@ public abstract class Entity {
     return y;
   }
 
-  public boolean hasSpriteSheets() {
-    return walkSheet != null && actionSheet != null;
-  }
-
   public String getAppearanceId() {
     return appearanceId;
   }
@@ -163,8 +107,5 @@ public abstract class Entity {
 
   protected void loadPlayerSprites(String appearanceId) {
     this.appearanceId = appearanceId;
-    SpriteAssets assets = SpriteAssets.loadPlayer(appearanceId);
-    this.walkSheet = assets.walkSheet();
-    this.actionSheet = assets.actionSheet();
   }
 }

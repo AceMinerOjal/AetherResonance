@@ -1,6 +1,5 @@
 package tile;
 
-import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -85,6 +84,11 @@ public class TiledMap {
       this.visible = visible;
       this.collidable = collidable;
     }
+
+    public String getName() { return name; }
+    public int[] getData() { return data; }
+    public boolean isVisible() { return visible; }
+    public boolean isCollidable() { return collidable; }
   }
 
   public static final class Tileset {
@@ -93,16 +97,20 @@ public class TiledMap {
     private final int tileHeight;
     private final int columns;
     private final int tileCount;
+    private final int margin;
+    private final int spacing;
     private final BufferedImage image;
     private final Set<Integer> solidLocalTileIds;
 
     public Tileset(int firstGid, int tileWidth, int tileHeight, int columns,
-        int tileCount, BufferedImage image, Set<Integer> solidLocalTileIds) {
+        int tileCount, int margin, int spacing, BufferedImage image, Set<Integer> solidLocalTileIds) {
       this.firstGid = firstGid;
       this.tileWidth = tileWidth;
       this.tileHeight = tileHeight;
       this.columns = columns;
       this.tileCount = tileCount;
+      this.margin = margin;
+      this.spacing = spacing;
       this.image = image;
       this.solidLocalTileIds = solidLocalTileIds;
     }
@@ -114,6 +122,34 @@ public class TiledMap {
 
     public int getFirstGid() {
       return firstGid;
+    }
+
+    public int getColumns() {
+      return columns;
+    }
+
+    public int getTileCount() {
+      return tileCount;
+    }
+
+    public int getTileWidth() {
+      return tileWidth;
+    }
+
+    public int getTileHeight() {
+      return tileHeight;
+    }
+
+    public int getMargin() {
+      return margin;
+    }
+
+    public int getSpacing() {
+      return spacing;
+    }
+
+    public BufferedImage getImage() {
+      return image;
     }
 
     public boolean isSolid(int gid) {
@@ -177,13 +213,12 @@ public class TiledMap {
     return tileHeight;
   }
 
-  public void draw(Graphics2D g2) {
-    for (Layer layer : layers) {
-      if (!layer.visible) {
-        continue;
-      }
-      drawLayer(g2, layer);
-    }
+  public List<Tileset> getTilesets() {
+    return tilesets;
+  }
+
+  public List<Layer> getLayers() {
+    return layers;
   }
 
   public Portal findIntersectingPortal(Hitbox hitbox) {
@@ -269,20 +304,32 @@ public class TiledMap {
   }
 
   public List<int[]> getEnemySpawnTilesByVariant() {
-    Map<Integer, int[]> firstTileByVariant = new LinkedHashMap<>();
+    // Collect all walkable tiles per variant, then pick up to MAX_ENEMIES_PER_VARIANT
+    // spread across each variant's available tiles.
+    Map<Integer, List<int[]>> tilesByVariant = new LinkedHashMap<>();
     for (int tileY = 0; tileY < height; tileY++) {
       for (int tileX = 0; tileX < width; tileX++) {
         if (isTileBlocked(tileX, tileY)) {
           continue;
         }
         int variant = getVariantAtTile(tileX, tileY);
-        if (variant < 0 || firstTileByVariant.containsKey(variant)) {
-          continue;
-        }
-        firstTileByVariant.put(variant, new int[] { tileX, tileY, variant });
+        if (variant < 0) continue;
+        tilesByVariant.computeIfAbsent(variant, k -> new ArrayList<>())
+            .add(new int[] { tileX, tileY, variant });
       }
     }
-    return new ArrayList<>(firstTileByVariant.values());
+
+    // Return up to 4 enemies per variant, spread across available tiles.
+    final int MAX_PER_VARIANT = 4;
+    List<int[]> result = new ArrayList<>();
+    for (Map.Entry<Integer, List<int[]>> entry : tilesByVariant.entrySet()) {
+      List<int[]> tiles = entry.getValue();
+      int step = Math.max(1, tiles.size() / MAX_PER_VARIANT);
+      for (int i = 0; i < tiles.size() && result.size() / Math.max(1, tilesByVariant.size()) < MAX_PER_VARIANT; i += step) {
+        result.add(tiles.get(i));
+      }
+    }
+    return result;
   }
 
   private boolean isSolidGid(int gid) {
@@ -292,34 +339,6 @@ public class TiledMap {
       }
     }
     return false;
-  }
-
-  private void drawLayer(Graphics2D g2, Layer layer) {
-    for (int tileY = 0; tileY < height; tileY++) {
-      for (int tileX = 0; tileX < width; tileX++) {
-        int gid = layer.data[tileY * width + tileX];
-        if (gid == 0) {
-          continue;
-        }
-
-        Tileset tileset = resolveTileset(gid);
-        if (tileset == null) {
-          continue;
-        }
-
-        int localId = gid - tileset.firstGid;
-        int sourceX = (localId % tileset.columns) * tileset.tileWidth;
-        int sourceY = (localId / tileset.columns) * tileset.tileHeight;
-
-        int destX = tileX * tileWidth;
-        int destY = tileY * tileHeight;
-        g2.drawImage(
-            tileset.image,
-            destX, destY, destX + tileWidth, destY + tileHeight,
-            sourceX, sourceY, sourceX + tileset.tileWidth, sourceY + tileset.tileHeight,
-            null);
-      }
-    }
   }
 
   private Tileset resolveTileset(int gid) {

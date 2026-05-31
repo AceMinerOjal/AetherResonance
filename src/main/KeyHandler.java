@@ -58,4 +58,16 @@ public class KeyHandler implements KeyListener {
     }
     virtualPressed[keyCode] = down;
   }
+
+  /**
+   * Directly set a key's pressed state. Used by GLFW key callback.
+   */
+  public void setKeyDown(int keyCode, boolean down) {
+    if (keyCode >= 0 && keyCode < KEY_COUNT) {
+      if (down && !keyPressed[keyCode]) {
+        keyTriggered[keyCode] = true;
+      }
+      keyPressed[keyCode] = down;
+    }
+  }
 }

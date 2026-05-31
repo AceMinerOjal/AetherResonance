@@ -1,4 +1,4 @@
-package entity.player.stats;
+package entity;
 
 import lib.Stat;
 

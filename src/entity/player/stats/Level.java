@@ -2,7 +2,7 @@ package entity.player.stats;
 
 public class Level {
   public static final int START_LEVEL = 0;
-  public static final int MAX_LEVEL = 128;
+  public static final int MAX_LEVEL = 127;
 
   private int level;
   private int exp;

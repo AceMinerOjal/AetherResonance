@@ -5,12 +5,12 @@ import java.util.List;
 import main.KeyHandler;
 import main.PlayerControls;
 
-import entity.player.Health;
+import entity.Dialectics;
+import entity.Health;
 import entity.player.Player;
 import entity.player.PlayerRace;
 import entity.player.Profession;
 import entity.player.SignatureElement;
-import entity.player.stats.Dialectics;
 import entity.player.stats.Mana;
 
 public class Warrior extends Player {
@@ -41,7 +41,7 @@ public class Warrior extends Player {
     }
     dashForward(18);
     restoreMana(1);
-    inflictConfiguredStatusEffectNearby(56, ap.get());
+    inflictConfiguredStatusEffectNearby(56, 40); // Power 40
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -59,7 +59,7 @@ public class Warrior extends Player {
       return;
     }
     applyTimedDefenceBonus(6, 4);
-    inflictConfiguredStatusEffectNearby(84, ap.get() * 1.1);
+    inflictConfiguredStatusEffectNearby(84, 55); // Power 55
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -69,7 +69,7 @@ public class Warrior extends Player {
     }
     healSelf(4 + ap.get() * 0.25);
     applyTimedApBonus(4, 3);
-    inflictConfiguredStatusEffectNearby(80, ap.get() * 1.35);
+    inflictConfiguredStatusEffectNearby(80, 75); // Power 75
     setAnimation(AnimationState.ATTACK);
   }
 }

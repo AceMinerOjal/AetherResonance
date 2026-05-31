@@ -11,7 +11,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-import entity.player.stats.Dialectics;
+import entity.DamageCalculator;
+import entity.Dialectics;
+import entity.Health;
 import entity.player.stats.Level;
 import entity.player.stats.Mana;
 import entity.statusEffects.EarthFracture;
@@ -25,6 +27,7 @@ import entity.statusEffects.WindTempo;
 
 public abstract class Player extends Entity implements EffectTarget {
   private static final double BASE_SKILL_RECOVERY_SECONDS = 0.35;
+  private static final double SPEED = 30;
 
   protected Health hp;
   protected Mana mana;
@@ -41,6 +44,8 @@ public abstract class Player extends Entity implements EffectTarget {
   private final List<InventoryItem> inventory = List.of(InventoryItem.ELEMENT_TUNER);
   private int selectedInventoryIndex;
   private List<Player> party = Collections.emptyList();
+  private List<Enemy> enemies = Collections.emptyList();
+  private tile.TiledMap currentMap;
   private SignatureElement signatureElement;
   private double damageTakenMultiplier = 1.0;
   private double attackSpeedMultiplier = 1.0;
@@ -63,7 +68,9 @@ public abstract class Player extends Entity implements EffectTarget {
     this.level = new Level();
   }
 
-  public void update(double dt) {
+  public void update(double dt, tile.TiledMap map, List<Enemy> currentEnemies) {
+    this.currentMap = map;
+    this.enemies = currentEnemies;
     for (int i = activeEffects.size() - 1; i >= 0; i--) {
       activeEffects.get(i).update(dt);
       if (!activeEffects.get(i).isActive()) {
@@ -85,7 +92,7 @@ public abstract class Player extends Entity implements EffectTarget {
     ap.update(dt);
     defence.update(dt);
     skillRecoveryRemaining = Math.max(0.0, skillRecoveryRemaining - dt);
-    updateAnimation(dt);
+    updateAnimation((float) dt);
   }
 
   public void clampToBounds(int worldWidth, int worldHeight) {
@@ -202,7 +209,17 @@ public abstract class Player extends Entity implements EffectTarget {
       }
     }
 
-    setPosition(x + vx * SPEED * dt, y + vy * SPEED * dt);
+    double nextX = x + vx * SPEED * dt;
+    double nextY = y + vy * SPEED * dt;
+
+    if (currentMap != null) {
+      hitbox.sync(nextX, nextY);
+      if (currentMap.collides(hitbox)) {
+        hitbox.sync(x, y);
+        return;
+      }
+    }
+    setPosition(nextX, nextY);
   }
 
   protected abstract void performSkill(int skillNum);
@@ -242,6 +259,14 @@ public abstract class Player extends Entity implements EffectTarget {
       case DOWN -> targetY += distance;
       case LEFT -> targetX -= distance;
       case RIGHT -> targetX += distance;
+    }
+
+    if (currentMap != null) {
+      hitbox.sync(targetX, targetY);
+      if (currentMap.collides(hitbox)) {
+        hitbox.sync(x, y);
+        return;
+      }
     }
     setPosition(targetX, targetY);
   }
@@ -290,22 +315,27 @@ public abstract class Player extends Entity implements EffectTarget {
     mana.add(amount);
   }
 
-  protected void inflictConfiguredStatusEffectOn(Player target, double power) {
+  protected void inflictConfiguredStatusEffectOn(EffectTarget target, double power) {
     if (target == null || target == this) {
       return;
     }
-    if (!friendlyFireEnabled || !target.friendlyFireEnabled) {
-      return;
+    // Only check friendly fire for players
+    if (target instanceof Player otherPlayer) {
+      if (!friendlyFireEnabled || !otherPlayer.friendlyFireEnabled) {
+        return;
+      }
     }
     if (ThreadLocalRandom.current().nextDouble() > Math.min(1.0, Math.max(0.05, accuracyMultiplier))) {
       return;
     }
 
     // Offensive skills always inherit the active elemental skill type.
+    double calculatedDamage = DamageCalculator.calculate(this, target, power);
+
     StatusEffect effect = switch (statusForElement(signatureElement)) {
-      case BURN -> new FireBurn(3.0, Math.max(1.0, power * 0.25), 1.0);
+      case BURN -> new FireBurn(3.0, Math.max(1.0, calculatedDamage * 0.25), 1.0);
       case FREEZE -> new IceFreeze(Math.max(0.75, 1.25 + power * 0.01));
-      case CONDUCTIVE -> new LightningConductive(3.0, Math.max(1.0, power * 0.2), 1.0, 0.5, 64.0);
+      case CONDUCTIVE -> new LightningConductive(3.0, Math.max(1.0, calculatedDamage * 0.2), 1.0, 0.5, 64.0);
       case FRACTURE -> new EarthFracture(4.0, 0.15);
       case HASTE_SLOW -> new WindTempo(3.5, -0.35);
       case OBSCURE -> new ShadowObscure(4.0, -0.35, -0.4);
@@ -316,17 +346,10 @@ public abstract class Player extends Entity implements EffectTarget {
   }
 
   protected void inflictConfiguredStatusEffectNearby(double radius, double power) {
-    if (!friendlyFireEnabled) {
-      return;
-    }
-    for (Player other : party) {
-      if (other == null || other == this) {
-        continue;
-      }
-      double dx = other.x - x;
-      double dy = other.y - y;
-      if (Math.hypot(dx, dy) <= radius) {
-        inflictConfiguredStatusEffectOn(other, power);
+    List<Entity> nearby = getNearbyEntities(radius);
+    for (Entity entity : nearby) {
+      if (entity instanceof EffectTarget target) {
+        inflictConfiguredStatusEffectOn(target, power);
       }
     }
   }
@@ -336,10 +359,6 @@ public abstract class Player extends Entity implements EffectTarget {
       @Override
       public void onFinish() {
         onFinish.run();
-      }
-
-      @Override
-      public void onActive() {
       }
     };
     timer.start();
@@ -403,9 +422,23 @@ public abstract class Player extends Entity implements EffectTarget {
   }
 
   @Override
+  public int getLevel() {
+    return level.getLevel();
+  }
+
+  @Override
+  public double getAttackPower() {
+    return ap.get();
+  }
+
+  @Override
+  public double getDefence() {
+    return defence.get();
+  }
+
+  @Override
   public void applyDamage(double amount) {
-    double mitigated = Math.max(0.0, amount - (defence.get() * 0.1));
-    hp.damage(mitigated * damageTakenMultiplier);
+    hp.damage(amount);
   }
 
   @Override
@@ -430,19 +463,20 @@ public abstract class Player extends Entity implements EffectTarget {
 
   @Override
   public List<Entity> getNearbyEntities(double radius) {
-    if (party.isEmpty()) {
-      return Collections.emptyList();
-    }
     double effectiveRadius = Math.max(0.0, radius * detectionRangeMultiplier);
     List<Entity> nearby = new ArrayList<>();
+
     for (Player other : party) {
-      if (other == null || other == this) {
-        continue;
-      }
-      double dx = other.x - x;
-      double dy = other.y - y;
-      if (Math.hypot(dx, dy) <= effectiveRadius) {
+      if (other == null || other == this) continue;
+      if (Math.hypot(other.x - x, other.y - y) <= effectiveRadius) {
         nearby.add(other);
+      }
+    }
+
+    for (Enemy enemy : enemies) {
+      if (enemy == null || !enemy.isAlive()) continue;
+      if (Math.hypot(enemy.getX() - x, enemy.getY() - y) <= effectiveRadius) {
+        nearby.add(enemy);
       }
     }
     return nearby;

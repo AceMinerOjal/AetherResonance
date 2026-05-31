@@ -65,26 +65,8 @@ public abstract class Stat {
     return value;
   }
 
-  public double getBase() {
-    return base;
-  }
-
-  public double getMax() {
-    return max;
-  }
-
   public double getRegen() {
     return regen;
-  }
-
-  public void setBase(double base) {
-    this.base = base;
-    clamp();
-  }
-
-  public void setMax(double max) {
-    this.max = max;
-    clamp();
   }
 
   public void setRegen(double regen) {

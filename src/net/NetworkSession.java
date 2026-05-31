@@ -61,10 +61,6 @@ public class NetworkSession implements AutoCloseable {
     this.restoreListener = listener;
   }
 
-  public int mySlot() {
-    return mySlot;
-  }
-
   public Map<Integer, NetInput> remoteInputs() {
     return remoteInputs;
   }
@@ -75,10 +71,6 @@ public class NetworkSession implements AutoCloseable {
 
   public boolean isConnected() {
     return peerRuntime == null || peerRuntime.isConnected();
-  }
-
-  public PeerConnectionState getConnectionState() {
-    return peerRuntime == null ? PeerConnectionState.CONNECTED : peerRuntime.connectionState();
   }
 
   public void updateConnectionState() {
@@ -345,7 +337,6 @@ public class NetworkSession implements AutoCloseable {
         BufferedReader hostIn = new BufferedReader(
             new InputStreamReader(hostSocket.getInputStream(), StandardCharsets.UTF_8));
 
-        connectionState.set(PeerConnectionState.RECONNECTING);
         hostOut.println(NetProtocol.hello());
 
         Thread hostThread = new Thread(() -> hostLoop(hostSocket, hostIn), "P2PClientHostLoop");
@@ -435,7 +426,6 @@ public class NetworkSession implements AutoCloseable {
 
   public enum PeerConnectionState {
     CONNECTED,
-    DISCONNECTED,
-    RECONNECTING
+    DISCONNECTED
   }
 }

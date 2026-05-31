@@ -29,10 +29,6 @@ public abstract class StatusEffect extends Timer {
   @Override
   public abstract void onFinish();
 
-  @Override
-  public void onActive() {
-  }
-
   public void update(double dt) {
     if (!isActive()) {
       super.update(dt);

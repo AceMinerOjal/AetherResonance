@@ -21,14 +21,20 @@ public interface EffectTarget {
     return 1.0;
   }
 
+  default int getLevel() {
+    return 1;
+  }
+
+  default double getAttackPower() {
+    return 0;
+  }
+
+  default double getDefence() {
+    return 0;
+  }
+
   default List<Entity> getNearbyEntities(double radius) {
     return Collections.emptyList();
-  }
-
-  default void modifyDefence(double amount) {
-  }
-
-  default void modifyAp(double amount) {
   }
 
   default void modifyAttackSpeedMultiplier(double delta) {

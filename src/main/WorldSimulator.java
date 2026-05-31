@@ -3,7 +3,9 @@ package main;
 import java.util.ArrayList;
 import java.util.List;
 
+import entity.enemy.DefaultEnemy;
 import entity.enemy.Enemy;
+import entity.enemy.Slime;
 import entity.player.Player;
 import net.NetEnemyState;
 import tile.LevelManager;
@@ -32,16 +34,9 @@ public class WorldSimulator {
   public void simulate(double dt) {
     TiledMap map = levelManager.getCurrentMap();
     ensureEnemiesForCurrentMap(map);
-    refreshFriendlyFireFlags(map);
 
     for (Player player : players) {
-      double oldX = player.getX();
-      double oldY = player.getY();
-      player.update(dt);
-
-      if (map != null && map.collides(player.getHitbox())) {
-        player.setWorldPosition(oldX, oldY);
-      }
+      player.update(dt, map, enemies);
 
       if (map != null) {
         player.clampToBounds(map.getPixelWidth(), map.getPixelHeight());
@@ -59,12 +54,17 @@ public class WorldSimulator {
       }
     }
 
-    for (Enemy enemy : enemies) {
+    for (int i = 0; i < enemies.size(); i++) {
+      Enemy enemy = enemies.get(i);
       double oldX = enemy.getX();
       double oldY = enemy.getY();
       enemy.update(dt, map, players);
       if (map != null && map.collides(enemy.getHitbox())) {
         enemy.setWorldPosition(oldX, oldY);
+      }
+      if (!enemy.isAlive()) {
+        enemies.remove(i);
+        i--;
       }
     }
 
@@ -101,11 +101,24 @@ public class WorldSimulator {
     enemies.clear();
     enemyMapId = currentMapId;
 
+    boolean first = true;
     for (int[] spawn : map.getEnemySpawnTilesByVariant()) {
       int tileX = spawn[0];
       int tileY = spawn[1];
       int variant = spawn[2];
-      enemies.add(new Enemy(tileX * map.getTileWidth(), tileY * map.getTileHeight(), variant));
+      if (first) {
+        enemies.add(new Slime(
+            tileX * map.getTileWidth(),
+            tileY * map.getTileHeight(),
+            tileX, tileY));
+        first = false;
+      } else {
+        enemies.add(new DefaultEnemy(
+            tileX * map.getTileWidth(),
+            tileY * map.getTileHeight(),
+            variant,
+            tileX, tileY));
+      }
     }
   }
 

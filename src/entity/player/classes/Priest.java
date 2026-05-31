@@ -5,12 +5,12 @@ import java.util.List;
 import main.KeyHandler;
 import main.PlayerControls;
 
-import entity.player.Health;
+import entity.Dialectics;
+import entity.Health;
 import entity.player.Player;
 import entity.player.PlayerRace;
 import entity.player.Profession;
 import entity.player.SignatureElement;
-import entity.player.stats.Dialectics;
 import entity.player.stats.Mana;
 
 public class Priest extends Player {
@@ -41,7 +41,7 @@ public class Priest extends Player {
     }
     healSelf(8 + ap.get() * 0.2);
     restoreMana(4);
-    inflictConfiguredStatusEffectNearby(52, ap.get() * 0.8);
+    inflictConfiguredStatusEffectNearby(52, 35); // Power 35
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -60,7 +60,7 @@ public class Priest extends Player {
     }
     healSelf(16 + ap.get() * 0.3);
     applyTimedRegenBonus(1.5, 2.0, 6);
-    inflictConfiguredStatusEffectNearby(110, ap.get());
+    inflictConfiguredStatusEffectNearby(110, 60); // Power 60
     setAnimation(AnimationState.ATTACK);
   }
 
@@ -71,7 +71,7 @@ public class Priest extends Player {
     applyTimedApBonus(8, 8);
     applyTimedDefenceBonus(8, 8);
     applyTimedRegenBonus(1, 1, 8);
-    inflictConfiguredStatusEffectNearby(140, ap.get() * 1.25);
+    inflictConfiguredStatusEffectNearby(140, 95); // Power 95
     setAnimation(AnimationState.ATTACK);
   }
 }

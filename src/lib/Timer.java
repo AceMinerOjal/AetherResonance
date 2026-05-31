@@ -25,28 +25,12 @@ public abstract class Timer {
       timeLeft = 0;
       active = false;
       onFinish();
-    } else
-      onActive();
+    }
   }
 
   public abstract void onFinish();
 
-  public abstract void onActive();
-
-  public void reset() {
-    active = false;
-    timeLeft = 0;
-  }
-
-  public boolean isReady() {
-    return !active && timeLeft <= 0;
-  }
-
   public boolean isActive() {
     return active;
-  }
-
-  public double getProgress() {
-    return duration <= 0 ? 1.0 : 1.0 - (timeLeft / duration);
   }
 }
