@@ -48,7 +48,7 @@ public class SaveStateManager {
         Files.createDirectories(parent);
       }
       try (OutputStream out = Files.newOutputStream(quicksavePath)) {
-        props.store(out, "Legend Java Quicksave");
+        props.store(out, "AetherResonance Quicksave");
       }
     } catch (IOException e) {
       throw new IllegalStateException("Failed to save quicksave to " + quicksavePath, e);

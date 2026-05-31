@@ -32,10 +32,11 @@ Network mode is configured with JVM args:
 - host: `--mode=p2p-host --port=7777`
 - client: `--mode=p2p-peer --host=HOST_IP --port=7777`
 
-Renderer mode:
+Renderer:
 
-- Java2D (default): `--renderer=java2d`
-- Vulkan shader bootstrap: `--renderer=vulkan` (falls back to Java2D if Vulkan init fails)
+- Vulkan (via LWJGL) for high-performance sprite and tile rendering.
+- Orthographic projection system at 640x360 base resolution.
+- GLFW-based window management and input.
 
 Networking model:
 
@@ -110,7 +111,7 @@ Items:
 Leveling:
 
 - starting level is `0`
-- max level is `128`
+- max level is `127`
 
 ## Map Authoring (Tiled)
 
@@ -139,6 +140,6 @@ Friendly fire zones:
 Enemy variants:
 
 - enemies sense players from up to 10 tiles away
-- enemies spawn from walkable tile variants
+- enemies spawn from walkable tile variants (up to 4 per variant)
 - each enemy is locked to its spawn variant
 - enemies pathfind only through tiles of their own variant
