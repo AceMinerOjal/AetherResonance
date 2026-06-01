@@ -79,6 +79,7 @@ public class LevelManager {
       double offsetY = (i / 2) * 24;
       party.get(i).setWorldPosition(spawnX + offsetX, spawnY + offsetY);
     }
+    main.AudioManager.playSound("portal");
   }
 
   public String getCurrentMapId() {

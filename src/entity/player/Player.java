@@ -14,6 +14,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import entity.DamageCalculator;
 import entity.Dialectics;
 import entity.Health;
+import entity.enemy.Enemy;
 import entity.player.stats.Level;
 import entity.player.stats.Mana;
 import entity.statusEffects.EarthFracture;
@@ -240,6 +241,7 @@ public abstract class Player extends Entity implements EffectTarget {
     }
     performSkill(slot);
     setAnimation(AnimationState.ATTACK);
+    main.AudioManager.playSound("attack");
     skillRecoveryRemaining = BASE_SKILL_RECOVERY_SECONDS / Math.max(0.25, attackSpeedMultiplier);
   }
 
@@ -404,6 +406,7 @@ public abstract class Player extends Entity implements EffectTarget {
 
   protected void cycleSignatureElement() {
     signatureElement = signatureElement.next();
+    main.AudioManager.playSound("click");
     System.out.println(getClass().getSimpleName() + " element -> " + signatureElement);
   }
 
@@ -413,11 +416,13 @@ public abstract class Player extends Entity implements EffectTarget {
 
   private void selectPreviousInventoryItem() {
     selectedInventoryIndex = (selectedInventoryIndex - 1 + inventory.size()) % inventory.size();
+    main.AudioManager.playSound("click");
     System.out.println(getClass().getSimpleName() + " inventory -> " + selectedInventoryItem());
   }
 
   private void selectNextInventoryItem() {
     selectedInventoryIndex = (selectedInventoryIndex + 1) % inventory.size();
+    main.AudioManager.playSound("click");
     System.out.println(getClass().getSimpleName() + " inventory -> " + selectedInventoryItem());
   }
 

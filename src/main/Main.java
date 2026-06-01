@@ -76,6 +76,12 @@ public class Main {
     VulkanRenderer renderer = new VulkanRenderer(window, screenWidth, screenHeight);
     VulkanGameRenderer gameRenderer = new VulkanGameRenderer(renderer, screenWidth, screenHeight);
 
+    AudioManager.init();
+    // Load sounds here (placeholders)
+    AudioManager.loadSound("attack", "audio/attack.ogg");
+    AudioManager.loadSound("portal", "audio/portal.ogg");
+    AudioManager.loadSound("click", "audio/click.ogg");
+
     NetworkMode networkMode = launchOptions.networkConfig().mode();
     NetworkSession networkSession = networkMode.isLocal() ? null : new NetworkSession(launchOptions.networkConfig());
 
@@ -138,6 +144,7 @@ public class Main {
     }
 
     if (networkSession != null) networkSession.close();
+    AudioManager.cleanup();
     renderer.close();
     glfwDestroyWindow(window);
     glfwTerminate();
