@@ -26,8 +26,8 @@ import org.lwjgl.vulkan.*;
 public final class VulkanRenderer implements AutoCloseable {
 
   private static final int MAX_FRAMES = 2;
-  private static final int MAX_TEXTURES = 256;
-  private static final int MAX_QUADS = 4096;
+  private static final int MAX_TEXTURES = 8;
+  private static final int MAX_QUADS = 16384;
   private static final int VTX_SIZE = 32;   // 8 floats per vertex: x,y,u,v,r,g,b,a
   private static final int IDX_PER_QUAD = 6;
 
@@ -46,7 +46,8 @@ public final class VulkanRenderer implements AutoCloseable {
   private long[] swapchainViews;
 
   private long pipeline, pipelineLayout, renderPass;
-  private long descriptorPool, descriptorSetLayout, descriptorSet;
+  private long descriptorPool, descriptorSetLayout;
+  private final long[] descriptorSets = new long[MAX_FRAMES];
 
   private VkCommandBuffer[] cmdBufs;
   private long[] semImage, semRender, fences;
@@ -58,8 +59,8 @@ public final class VulkanRenderer implements AutoCloseable {
   private final long[] texSamplers = new long[MAX_TEXTURES];
   private int texCount;
 
-  private long vBuf, iBuf, iMem;
-  private long vBufSize, vMemHost;
+  private final long[] vBuf = new long[MAX_FRAMES], vMemHost = new long[MAX_FRAMES];
+  private long vBufSize, iBuf, iMem;
   private long[] uboBuf = new long[MAX_FRAMES];
   private long[] uboMemArr = new long[MAX_FRAMES];
 
@@ -172,19 +173,20 @@ public final class VulkanRenderer implements AutoCloseable {
 
   private SwapCaps queryCaps(MemoryStack s, VkPhysicalDevice dev) {
     SwapCaps r = new SwapCaps();
-    try (MemoryStack s2 = stackPush()) {
-      VkSurfaceCapabilitiesKHR cap = VkSurfaceCapabilitiesKHR.calloc(s2);
-      if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev, surface, cap) == VK_SUCCESS) r.cap = cap;
+    r.cap = VkSurfaceCapabilitiesKHR.malloc(s);
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev, surface, r.cap) != VK_SUCCESS) r.cap = null;
+
+    IntBuffer c = s.mallocInt(1);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, c, null);
+    if (c.get(0) > 0) {
+      r.fmts = VkSurfaceFormatKHR.malloc(c.get(0), s);
+      vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, c, r.fmts);
     }
-    try (MemoryStack s2 = stackPush()) {
-      IntBuffer c = s2.ints(0);
-      vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, c, null);
-      if (c.get(0) > 0) { r.fmts = VkSurfaceFormatKHR.malloc(c.get(0), s2); vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, c, r.fmts); }
-    }
-    try (MemoryStack s2 = stackPush()) {
-      IntBuffer c = s2.ints(0);
-      vkGetPhysicalDeviceSurfacePresentModesKHR(dev, surface, c, null);
-      if (c.get(0) > 0) { r.modes = s.mallocInt(c.get(0)); vkGetPhysicalDeviceSurfacePresentModesKHR(dev, surface, c, r.modes); }
+
+    vkGetPhysicalDeviceSurfacePresentModesKHR(dev, surface, c, null);
+    if (c.get(0) > 0) {
+      r.modes = s.mallocInt(c.get(0));
+      vkGetPhysicalDeviceSurfacePresentModesKHR(dev, surface, c, r.modes);
     }
     return r;
   }
@@ -297,7 +299,9 @@ public final class VulkanRenderer implements AutoCloseable {
   /* ---- Descriptor set layout ---- */
   private void createDescriptorLayout() {
     try (MemoryStack s = stackPush()) {
-      VkDescriptorSetLayoutBinding.Buffer b = VkDescriptorSetLayoutBinding.calloc(1, s).binding(0).descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(MAX_TEXTURES).stageFlags(VK_SHADER_STAGE_FRAGMENT_BIT);
+      VkDescriptorSetLayoutBinding.Buffer b = VkDescriptorSetLayoutBinding.calloc(2, s);
+      b.get(0).binding(0).descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(1).stageFlags(VK_SHADER_STAGE_VERTEX_BIT);
+      b.get(1).binding(1).descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(MAX_TEXTURES).stageFlags(VK_SHADER_STAGE_FRAGMENT_BIT);
       VkDescriptorSetLayoutCreateInfo ci = VkDescriptorSetLayoutCreateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO).pBindings(b);
       LongBuffer p = s.mallocLong(1); check(vkCreateDescriptorSetLayout(device, ci, null, p), "mkDSL"); descriptorSetLayout = p.get(0);
     }
@@ -315,7 +319,7 @@ public final class VulkanRenderer implements AutoCloseable {
       long fs = mkShader(s, compile("fs", shaderc_fragment_shader, """
           #version 450
           layout(location=0) in vec2 oU; layout(location=1) in vec4 oC;
-          layout(binding=0) uniform sampler2D ts[MAX_TEX];
+          layout(binding=1) uniform sampler2D ts[MAX_TEX];
           layout(push_constant) uniform PC{int ti;}pc;
           layout(location=0) out vec4 fC;
           void main(){fC=pc.ti<0?oC:texture(ts[pc.ti],oU)*oC;}""".replace("MAX_TEX", "" + MAX_TEXTURES)));
@@ -410,12 +414,15 @@ public final class VulkanRenderer implements AutoCloseable {
   /* ---- Vertex/Index/UBO buffers ---- */
   private void createBuffers() {
     try (MemoryStack s = stackPush()) {
-      long vSize = (long) MAX_QUADS * 6 * VTX_SIZE;
+      long vSize = (long) MAX_QUADS * 4 * VTX_SIZE;
       long iSize = (long) MAX_QUADS * IDX_PER_QUAD * 4;
       vBufSize = vSize;
-      // Host-visible vertex buffer: written directly each frame, no staging needed
-      vBuf = mkBuf(s, vSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-      vMemHost = mkHostMem(s, vSize); vkBindBufferMemory(device, vBuf, vMemHost, 0);
+
+      for (int i = 0; i < MAX_FRAMES; i++) {
+        vBuf[i] = mkBuf(s, vSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        VkMemoryRequirements vmr = VkMemoryRequirements.malloc(s); vkGetBufferMemoryRequirements(device, vBuf[i], vmr);
+        vMemHost[i] = mkHostMem(s, vmr.size(), vmr.memoryTypeBits()); vkBindBufferMemory(device, vBuf[i], vMemHost[i], 0);
+      }
 
       iBuf = mkBuf(s, iSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
       iMem = mkDevMem(s, iBuf); vkBindBufferMemory(device, iBuf, iMem, 0);
@@ -424,14 +431,15 @@ public final class VulkanRenderer implements AutoCloseable {
       long sb = mkStagingBuf(s, iSize);
       { PointerBuffer mp = s.mallocPointer(1); vkMapMemory(device, sbMem(sb), 0L, iSize, 0, mp);
         ByteBuffer mapped = mp.getByteBuffer(0, (int) iSize); IntBuffer idx = mapped.asIntBuffer();
-        int vo = 0; for (int i = 0; i < MAX_QUADS; i++) { idx.put(vo).put(vo+1).put(vo+2).put(vo).put(vo+2).put(vo+3); vo += 6; }
+        int vo = 0; for (int j = 0; j < MAX_QUADS; j++) { idx.put(vo).put(vo+1).put(vo+2).put(vo).put(vo+2).put(vo+3); vo += 4; }
         vkUnmapMemory(device, sbMem(sb)); }
       copyBufDev(s, sb, iBuf, iSize);
       destroyStagingBuf(s, sb);
 
       for (int i = 0; i < MAX_FRAMES; i++) {
         uboBuf[i] = mkBuf(s, 64, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-        uboMemArr[i] = mkHostMem(s, 64); vkBindBufferMemory(device, uboBuf[i], uboMemArr[i], 0);
+        VkMemoryRequirements umr = VkMemoryRequirements.malloc(s); vkGetBufferMemoryRequirements(device, uboBuf[i], umr);
+        uboMemArr[i] = mkHostMem(s, umr.size(), umr.memoryTypeBits()); vkBindBufferMemory(device, uboBuf[i], uboMemArr[i], 0);
       }
     }
   }
@@ -445,9 +453,9 @@ public final class VulkanRenderer implements AutoCloseable {
     VkMemoryAllocateInfo ai = VkMemoryAllocateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO).allocationSize(mr.size()).memoryTypeIndex(findMT(s, mr.memoryTypeBits(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
     LongBuffer p = s.mallocLong(1); vkAllocateMemory(device, ai, null, p); return p.get(0);
   }
-  private long mkHostMem(MemoryStack s, long size) {
-    VkMemoryAllocateInfo ai = VkMemoryAllocateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO).allocationSize(size).memoryTypeIndex(findMT(s, 0xF, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
-    LongBuffer p = s.mallocLong(1); vkAllocateMemory(device, ai, null, p); return p.get(0);
+  private long mkHostMem(MemoryStack s, long size, int mask) {
+    VkMemoryAllocateInfo ai = VkMemoryAllocateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO).allocationSize(size).memoryTypeIndex(findMT(s, mask, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+    LongBuffer p = s.mallocLong(1); check(vkAllocateMemory(device, ai, null, p), "mkHostMem"); return p.get(0);
   }
 
   private int findMT(MemoryStack s, int mask, int flags) {
@@ -585,30 +593,43 @@ public final class VulkanRenderer implements AutoCloseable {
   /* ---- Descriptor pool + set ---- */
   private void createDescriptorPool() {
     try (MemoryStack s = stackPush()) {
-      VkDescriptorPoolSize.Buffer ps = VkDescriptorPoolSize.calloc(1, s).type(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(MAX_TEXTURES);
-      VkDescriptorPoolCreateInfo ci = VkDescriptorPoolCreateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO).pPoolSizes(ps).maxSets(1);
-      LongBuffer p = s.mallocLong(1); check(vkCreateDescriptorPool(device, ci, null, p), "mkDP"); descriptorPool = p.get(0);
+      VkDescriptorPoolSize.Buffer ps = VkDescriptorPoolSize.calloc(2, s);
+      ps.get(0).type(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(MAX_FRAMES);
+      ps.get(1).type(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(MAX_TEXTURES * MAX_FRAMES);
+      VkDescriptorPoolCreateInfo ci = VkDescriptorPoolCreateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO).pPoolSizes(ps).maxSets(MAX_FRAMES);
+      LongBuffer p = mkLong(s); check(vkCreateDescriptorPool(device, ci, null, p), "mkDP"); descriptorPool = p.get(0);
     }
   }
 
   private void createDescriptorSet() {
     try (MemoryStack s = stackPush()) {
-      VkDescriptorSetAllocateInfo ai = VkDescriptorSetAllocateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO).descriptorPool(descriptorPool).pSetLayouts(s.longs(descriptorSetLayout));
-      LongBuffer p = s.mallocLong(1); check(vkAllocateDescriptorSets(device, ai, p), "mkDS"); descriptorSet = p.get(0);
-      VkDescriptorImageInfo.Buffer infos = VkDescriptorImageInfo.calloc(MAX_TEXTURES, s);
-      for (int i = 0; i < MAX_TEXTURES; i++) infos.get(i).sampler(texSamplers[0]).imageView(texViews[0]).imageLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-      VkWriteDescriptorSet.Buffer w = VkWriteDescriptorSet.calloc(1, s);
-      w.get(0).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET).dstSet(descriptorSet).dstBinding(0).dstArrayElement(0).descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(MAX_TEXTURES).pImageInfo(infos);
-      vkUpdateDescriptorSets(device, w, null);
+      LongBuffer layouts = s.mallocLong(MAX_FRAMES); for (int i = 0; i < MAX_FRAMES; i++) layouts.put(i, descriptorSetLayout);
+      VkDescriptorSetAllocateInfo ai = VkDescriptorSetAllocateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO).descriptorPool(descriptorPool).pSetLayouts(layouts);
+      LongBuffer p = s.mallocLong(MAX_FRAMES); check(vkAllocateDescriptorSets(device, ai, p), "mkDS");
+      for (int i = 0; i < MAX_FRAMES; i++) descriptorSets[i] = p.get(i);
+
+      for (int i = 0; i < MAX_FRAMES; i++) {
+        VkDescriptorBufferInfo.Buffer bi = VkDescriptorBufferInfo.calloc(1, s).buffer(uboBuf[i]).offset(0).range(64);
+        VkDescriptorImageInfo.Buffer ii = VkDescriptorImageInfo.calloc(MAX_TEXTURES, s);
+        for (int j = 0; j < MAX_TEXTURES; j++) ii.get(j).sampler(texSamplers[0]).imageView(texViews[0]).imageLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        VkWriteDescriptorSet.Buffer w = VkWriteDescriptorSet.calloc(2, s);
+        w.get(0).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET).dstSet(descriptorSets[i]).dstBinding(0).dstArrayElement(0).descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(1).pBufferInfo(bi);
+        w.get(1).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET).dstSet(descriptorSets[i]).dstBinding(1).dstArrayElement(0).descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(MAX_TEXTURES).pImageInfo(ii);
+        vkUpdateDescriptorSets(device, w, null);
+      }
     }
   }
 
   private void updateTexDS(int slot, long sam, long view) {
+    vkDeviceWaitIdle(device);
     try (MemoryStack s = stackPush()) {
       VkDescriptorImageInfo.Buffer info = VkDescriptorImageInfo.calloc(1, s); info.get(0).sampler(sam).imageView(view).imageLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-      VkWriteDescriptorSet.Buffer w = VkWriteDescriptorSet.calloc(1, s);
-      w.get(0).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET).dstSet(descriptorSet).dstBinding(0).dstArrayElement(slot).descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(1).pImageInfo(info.rewind() != null ? info : info);
-      vkUpdateDescriptorSets(device, w, null);
+      for (int i = 0; i < MAX_FRAMES; i++) {
+        VkWriteDescriptorSet.Buffer w = VkWriteDescriptorSet.calloc(1, s);
+        w.get(0).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET).dstSet(descriptorSets[i]).dstBinding(1).dstArrayElement(slot).descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(1).pImageInfo(info);
+        vkUpdateDescriptorSets(device, w, null);
+      }
     }
   }
 
@@ -639,15 +660,16 @@ public final class VulkanRenderer implements AutoCloseable {
 
   /* ---- Frame control ---- */
   public void beginFrame() {
-    try { vkWaitForFences(device, new long[]{fences[frameIdx]}, true, Long.MAX_VALUE); }
+    try { check(vkWaitForFences(device, new long[]{fences[frameIdx]}, true, -1L), "vkWaitFences"); }
     catch (Exception ex) { System.err.println("[VulkanRenderer] Fence wait failed: " + ex.getMessage()); }
   }
 
   public int acquireNextImage() {
     try (MemoryStack s = stackPush()) {
       IntBuffer p = s.mallocInt(1);
-      int r = vkAcquireNextImageKHR(device, swapchain, Long.MAX_VALUE, semImage[frameIdx], VK_NULL_HANDLE, p);
+      int r = vkAcquireNextImageKHR(device, swapchain, -1L, semImage[frameIdx], VK_NULL_HANDLE, p);
       if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) { recreateSwapchain(); return -1; }
+      if (r > 0) return -1;
       check(r, "vkAcquire"); return p.get(0);
     }
   }
@@ -665,7 +687,7 @@ public final class VulkanRenderer implements AutoCloseable {
       vkCmdBeginRenderPass(cmdBufs[frameIdx], rbi, VK_SUBPASS_CONTENTS_INLINE);
       vkCmdBindPipeline(cmdBufs[frameIdx], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-      VkViewport.Buffer vp = VkViewport.calloc(1, s).x(0).y(swapchainH).width(swapchainW).height(-swapchainH).minDepth(0).maxDepth(1);
+      VkViewport.Buffer vp = VkViewport.calloc(1, s).x(0).y(0).width(swapchainW).height(swapchainH).minDepth(0).maxDepth(1);
       vkCmdSetViewport(cmdBufs[frameIdx], 0, vp);
       VkRect2D.Buffer sc = VkRect2D.calloc(1, s).offset(VkOffset2D.calloc(s)).extent(VkExtent2D.calloc(s).width(swapchainW).height(swapchainH));
       vkCmdSetScissor(cmdBufs[frameIdx], 0, sc);
@@ -677,21 +699,30 @@ public final class VulkanRenderer implements AutoCloseable {
       uboFb.put(proj).position(0);
       vkUnmapMemory(device, uboMemArr[frameIdx]);
 
-      vkCmdBindDescriptorSets(cmdBufs[frameIdx], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, s.longs(descriptorSet), null);
+      vkCmdBindDescriptorSets(cmdBufs[frameIdx], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, s.longs(descriptorSets[frameIdx]), null);
 
       // Direct write to host-visible vertex buffer (no staging / no vkQueueWaitIdle)
       int totalVtx = 0, totalIdx = 0;
       for (RenderCommand c : cmds) { totalVtx += c.vertexCount; totalIdx += c.indexCount; }
       int vtxBytes = totalVtx * VTX_SIZE;
+      if (vtxBytes > vBufSize) {
+        System.err.println("Vertex buffer overflow! " + vtxBytes + " > " + vBufSize);
+        vtxBytes = (int) vBufSize;
+      }
       if (vtxBytes > 0) {
         PointerBuffer vmp = s.mallocPointer(1);
-        vkMapMemory(device, vMemHost, 0L, (long) vtxBytes, 0, vmp);
+        vkMapMemory(device, vMemHost[frameIdx], 0L, (long) vtxBytes, 0, vmp);
         FloatBuffer fb = vmp.getByteBuffer(0, vtxBytes).asFloatBuffer();
-        for (RenderCommand c : cmds) for (float v : c.vertices) fb.put(v);
-        vkUnmapMemory(device, vMemHost);
+        int written = 0;
+        for (RenderCommand c : cmds) {
+          if (written + c.vertices.length * 4 > vtxBytes) break;
+          for (float v : c.vertices) fb.put(v);
+          written += c.vertices.length * 4;
+        }
+        vkUnmapMemory(device, vMemHost[frameIdx]);
       }
 
-      LongBuffer offsets = s.longs(0), bufs = s.longs(vBuf);
+      LongBuffer offsets = s.longs(0), bufs = s.longs(vBuf[frameIdx]);
       vkCmdBindVertexBuffers(cmdBufs[frameIdx], 0, bufs, offsets);
       vkCmdBindIndexBuffer(cmdBufs[frameIdx], iBuf, 0, VK_INDEX_TYPE_UINT32);
 
@@ -787,8 +818,8 @@ public final class VulkanRenderer implements AutoCloseable {
     if (descriptorPool != VK_NULL_HANDLE) vkDestroyDescriptorPool(device, descriptorPool, null);
     if (descriptorSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null);
     if (commandPool != VK_NULL_HANDLE) vkDestroyCommandPool(device, commandPool, null);
-    if (vBuf != VK_NULL_HANDLE) vkDestroyBuffer(device, vBuf, null);
-    if (vMemHost != VK_NULL_HANDLE) vkFreeMemory(device, vMemHost, null);
+    if (vBuf != null) for (long b : vBuf) if (b != VK_NULL_HANDLE) vkDestroyBuffer(device, b, null);
+    if (vMemHost != null) for (long m : vMemHost) if (m != VK_NULL_HANDLE) vkFreeMemory(device, m, null);
     if (iBuf != VK_NULL_HANDLE) vkDestroyBuffer(device, iBuf, null);
     if (iMem != VK_NULL_HANDLE) vkFreeMemory(device, iMem, null);
     if (uboBuf != null) { for (long b : uboBuf) if (b != VK_NULL_HANDLE) vkDestroyBuffer(device, b, null); }
@@ -801,7 +832,8 @@ public final class VulkanRenderer implements AutoCloseable {
     if (instance != null) vkDestroyInstance(instance, null);
   }
 
-  private static void check(int r, String msg) { if (r != VK_SUCCESS) throw new RuntimeException(msg + ": " + r); }
+  private static void check(int r, String msg) { if (r < 0) throw new RuntimeException(msg + ": " + r); }
+  private static LongBuffer mkLong(MemoryStack s) { return s.mallocLong(1); }
 
   private static class SwapCaps { VkSurfaceCapabilitiesKHR cap; VkSurfaceFormatKHR.Buffer fmts; IntBuffer modes; boolean ok() { return cap != null && fmts != null && fmts.remaining() > 0 && modes != null && modes.remaining() > 0; } }
 

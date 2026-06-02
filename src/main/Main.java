@@ -312,8 +312,8 @@ public class Main {
   private static float[] buildOrthographicProjection(int width, int height) {
     float[] proj = new float[16];
     proj[0] = 2.0f / width;
-    proj[5] = -2.0f / height;
-    proj[10] = 1.0f; proj[12] = -1.0f; proj[13] = 1.0f; proj[15] = 1.0f;
+    proj[5] = 2.0f / height;
+    proj[10] = 1.0f; proj[12] = -1.0f; proj[13] = -1.0f; proj[15] = 1.0f;
     return proj;
   }
 

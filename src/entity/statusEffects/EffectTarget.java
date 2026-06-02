@@ -21,6 +21,22 @@ public interface EffectTarget {
     return 1.0;
   }
 
+  default double getDamageDealtMultiplier() {
+    return 1.0;
+  }
+
+  default double getCritChance() {
+    return 0.05; // 5% base
+  }
+
+  default double getCritDamageMultiplier() {
+    return 1.5; // 50% extra damage
+  }
+
+  default entity.player.SignatureElement getSignatureElement() {
+    return entity.player.SignatureElement.EARTH; // Neutral fallback
+  }
+
   default int getLevel() {
     return 1;
   }

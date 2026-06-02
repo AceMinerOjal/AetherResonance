@@ -52,7 +52,7 @@ public class Slime extends Enemy {
 
     for (Player player : players) {
       if (player.getHitbox().intersects(getHitbox())) {
-        double damage = DamageCalculator.calculate(this, player, CONTACT_DAMAGE);
+        double damage = DamageCalculator.calculate(this, player, CONTACT_DAMAGE, null);
         player.applyDamage(damage);
         contactCooldown = CONTACT_COOLDOWN;
         break;

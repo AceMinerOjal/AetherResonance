@@ -30,6 +30,7 @@ public abstract class Enemy extends Entity implements EffectTarget {
   private final int spawnTileX;
   private final int spawnTileY;
   protected int level = 1;
+  protected entity.player.SignatureElement signatureElement = entity.player.SignatureElement.EARTH;
   private double repathCooldown;
 
   public Enemy(double x, double y, int movementVariant, int spawnTileX, int spawnTileY) {
@@ -58,6 +59,11 @@ public abstract class Enemy extends Entity implements EffectTarget {
   @Override
   public double getDefence() {
     return defence.get();
+  }
+
+  @Override
+  public entity.player.SignatureElement getSignatureElement() {
+    return signatureElement;
   }
 
   @Override

@@ -50,6 +50,9 @@ public abstract class Player extends Entity implements EffectTarget {
   private tile.TiledMap currentMap;
   private SignatureElement signatureElement;
   private double damageTakenMultiplier = 1.0;
+  private double damageDealtMultiplier = 1.0;
+  private double critChance = 0.05;
+  private double critDamageMultiplier = 1.5;
   private double attackSpeedMultiplier = 1.0;
   private double accuracyMultiplier = 1.0;
   private double detectionRangeMultiplier = 1.0;
@@ -342,7 +345,7 @@ public abstract class Player extends Entity implements EffectTarget {
     }
 
     // Offensive skills always inherit the active elemental skill type.
-    double calculatedDamage = DamageCalculator.calculate(this, target, power);
+    double calculatedDamage = DamageCalculator.calculate(this, target, power, signatureElement);
 
     StatusEffect effect = switch (statusForElement(signatureElement)) {
       case BURN -> new FireBurn(3.0, Math.max(1.0, calculatedDamage * 0.25), 1.0);
@@ -388,6 +391,27 @@ public abstract class Player extends Entity implements EffectTarget {
     this.slot = slot;
   }
 
+  @Override
+  public double getDamageTakenMultiplier() {
+    return damageTakenMultiplier;
+  }
+
+  @Override
+  public double getDamageDealtMultiplier() {
+    return damageDealtMultiplier;
+  }
+
+  @Override
+  public double getCritChance() {
+    return critChance;
+  }
+
+  @Override
+  public double getCritDamageMultiplier() {
+    return critDamageMultiplier;
+  }
+
+  @Override
   public SignatureElement getSignatureElement() {
     return signatureElement;
   }
@@ -476,11 +500,6 @@ public abstract class Player extends Entity implements EffectTarget {
   @Override
   public void modifyDamageTakenMultiplier(double delta) {
     damageTakenMultiplier = Math.max(0.1, damageTakenMultiplier + delta);
-  }
-
-  @Override
-  public double getDamageTakenMultiplier() {
-    return damageTakenMultiplier;
   }
 
   @Override
