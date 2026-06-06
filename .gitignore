@@ -30,3 +30,10 @@ Thumbs.db
 
 # Temporary
 *.tmp
+
+# Stolen resource for testing
+*.png
+*.ogg
+
+# My maps and saves
+*.json

@@ -175,7 +175,7 @@ public class PlayerRoster {
     return true;
   }
 
-  private Player findPlayerBySlot(int slot) {
+  public Player findPlayerBySlot(int slot) {
     for (Player player : players) {
       if (player.getSlot() == slot) {
         return player;

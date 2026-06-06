@@ -137,6 +137,8 @@ public class Main {
       renderFrame(renderer, gameRenderer, levelManager, playerRoster, worldSimulator, clientSnapshot,
           networkMode, peerDisconnected, screenWidth, screenHeight);
 
+      updateAudioManager(playerRoster);
+
       long sleepMs = (long) ((drawInterval - elapsedNs) / 1_000_000);
       if (sleepMs > 0) {
         try { Thread.sleep(sleepMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
@@ -148,6 +150,13 @@ public class Main {
     renderer.close();
     glfwDestroyWindow(window);
     glfwTerminate();
+  }
+
+  private static void updateAudioManager(PlayerRoster playerRoster) {
+    Player p = playerRoster.findPlayerBySlot(0);
+    if (p != null) {
+      AudioManager.setListenerData((float) p.getX(), (float) p.getY(), 0.0f);
+    }
   }
 
   // ---------------------------------------------------------------------------
