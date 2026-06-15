@@ -2,6 +2,7 @@ package entity.player.classes;
 
 import java.util.List;
 
+import main.AudioBus;
 import main.KeyHandler;
 import main.PlayerControls;
 
@@ -14,9 +15,9 @@ import entity.player.SignatureElement;
 import entity.player.stats.Mana;
 
 public class Tank extends Player {
-  public Tank(double x, double y, KeyHandler kh, PlayerControls controls) {
+  public Tank(double x, double y, KeyHandler kh, PlayerControls controls, AudioBus audioBus) {
     super(x, y, kh, controls, SignatureElement.EARTH, PlayerRace.DWARF,
-        List.of(Profession.FORGING, Profession.MINING_ORES, Profession.MINING_ORBS));
+        List.of(Profession.FORGING, Profession.MINING_ORES, Profession.MINING_ORBS), audioBus);
 
     this.hp = new Health(100, 100, 0.5);
     this.mana = new Mana(10, 10, 0.25);

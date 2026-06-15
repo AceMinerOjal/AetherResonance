@@ -2,6 +2,7 @@ package entity.player.classes;
 
 import java.util.List;
 
+import main.AudioBus;
 import main.KeyHandler;
 import main.PlayerControls;
 
@@ -14,9 +15,9 @@ import entity.player.SignatureElement;
 import entity.player.stats.Mana;
 
 public class Priest extends Player {
-  public Priest(double x, double y, KeyHandler kh, PlayerControls controls) {
+  public Priest(double x, double y, KeyHandler kh, PlayerControls controls, AudioBus audioBus) {
     super(x, y, kh, controls, SignatureElement.ICE, PlayerRace.HALF_ELF,
-        List.of(Profession.ALCHEMY, Profession.BLESSING_ENCHANTING));
+        List.of(Profession.ALCHEMY, Profession.BLESSING_ENCHANTING), audioBus);
 
     this.hp = new Health(50, 50, 0.5);
     this.mana = new Mana(20, 20, 0.2);

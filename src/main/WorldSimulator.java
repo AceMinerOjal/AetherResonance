@@ -3,9 +3,8 @@ package main;
 import java.util.ArrayList;
 import java.util.List;
 
-import entity.enemy.DefaultEnemy;
 import entity.enemy.Enemy;
-import entity.enemy.Slime;
+import entity.enemy.EnemyFactory;
 import entity.player.Player;
 import net.NetEnemyState;
 import tile.LevelManager;
@@ -17,14 +16,17 @@ public class WorldSimulator {
   private final List<Enemy> enemies = new ArrayList<>();
   private final int screenWidth;
   private final int screenHeight;
+  private final EnemyFactory enemyFactory;
 
   private String enemyMapId;
 
-  public WorldSimulator(LevelManager levelManager, List<Player> players, int screenWidth, int screenHeight) {
+  public WorldSimulator(LevelManager levelManager, List<Player> players, int screenWidth, int screenHeight,
+      EnemyFactory enemyFactory) {
     this.levelManager = levelManager;
     this.players = players;
     this.screenWidth = screenWidth;
     this.screenHeight = screenHeight;
+    this.enemyFactory = enemyFactory;
   }
 
   public List<Enemy> enemies() {
@@ -101,24 +103,15 @@ public class WorldSimulator {
     enemies.clear();
     enemyMapId = currentMapId;
 
-    boolean first = true;
-    for (int[] spawn : map.getEnemySpawnTilesByVariant()) {
-      int tileX = spawn[0];
-      int tileY = spawn[1];
-      int variant = spawn[2];
-      if (first) {
-        enemies.add(new Slime(
-            tileX * map.getTileWidth(),
-            tileY * map.getTileHeight(),
-            tileX, tileY));
-        first = false;
-      } else {
-        enemies.add(new DefaultEnemy(
-            tileX * map.getTileWidth(),
-            tileY * map.getTileHeight(),
-            variant,
-            tileX, tileY));
-      }
+    int tileWidth = map.getTileWidth();
+    int tileHeight = map.getTileHeight();
+    for (TiledMap.SpawnPoint sp : map.getEnemySpawnPoints()) {
+      enemies.add(enemyFactory.create(
+          sp.tileX() * tileWidth,
+          sp.tileY() * tileHeight,
+          sp.variant(),
+          sp.tileX(), sp.tileY(),
+          sp.layerName()));
     }
   }
 

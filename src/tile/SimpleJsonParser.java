@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class SimpleJsonParser {
+public final class SimpleJsonParser {
   private final String text;
   private int index;
 

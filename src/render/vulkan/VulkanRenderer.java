@@ -26,7 +26,7 @@ import org.lwjgl.vulkan.*;
 public final class VulkanRenderer implements AutoCloseable {
 
   private static final int MAX_FRAMES = 2;
-  private static final int MAX_TEXTURES = 8;
+  private static final int MAX_TEXTURES = 64;
   private static final int MAX_QUADS = 16384;
   private static final int VTX_SIZE = 32;   // 8 floats per vertex: x,y,u,v,r,g,b,a
   private static final int IDX_PER_QUAD = 6;
@@ -314,13 +314,14 @@ public final class VulkanRenderer implements AutoCloseable {
           #version 450
           layout(location=0) in vec2 iP; layout(location=1) in vec2 iU; layout(location=2) in vec4 iC;
           layout(binding=0) uniform UBO{mat4 proj;}ubo;
+          layout(push_constant) uniform PC{int ti; int z;}pc;
           layout(location=0) out vec2 oU; layout(location=1) out vec4 oC;
-          void main(){gl_Position=ubo.proj*vec4(iP,0,1);oU=iU;oC=iC;}"""));
+          void main(){gl_Position=ubo.proj*vec4(iP,pc.z*0.001,1);oU=iU;oC=iC;}"""));
       long fs = mkShader(s, compile("fs", shaderc_fragment_shader, """
           #version 450
           layout(location=0) in vec2 oU; layout(location=1) in vec4 oC;
           layout(binding=1) uniform sampler2D ts[MAX_TEX];
-          layout(push_constant) uniform PC{int ti;}pc;
+          layout(push_constant) uniform PC{int ti; int z;}pc;
           layout(location=0) out vec4 fC;
           void main(){fC=pc.ti<0?oC:texture(ts[pc.ti],oU)*oC;}""".replace("MAX_TEX", "" + MAX_TEXTURES)));
 
@@ -345,7 +346,7 @@ public final class VulkanRenderer implements AutoCloseable {
       VkPipelineColorBlendStateCreateInfo cb = VkPipelineColorBlendStateCreateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO).pAttachments(ba);
       IntBuffer dyn = s.mallocInt(2); dyn.put(0, VK_DYNAMIC_STATE_VIEWPORT).put(1, VK_DYNAMIC_STATE_SCISSOR);
       VkPipelineDynamicStateCreateInfo ds = VkPipelineDynamicStateCreateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO).pDynamicStates(dyn);
-      VkPushConstantRange.Buffer pcr = VkPushConstantRange.calloc(1, s).stageFlags(VK_SHADER_STAGE_FRAGMENT_BIT).offset(0).size(4);
+      VkPushConstantRange.Buffer pcr = VkPushConstantRange.calloc(1, s).stageFlags(VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT).offset(0).size(8);
       LongBuffer dsl = s.mallocLong(1); dsl.put(0, descriptorSetLayout);
       VkPipelineLayoutCreateInfo pl = VkPipelineLayoutCreateInfo.calloc(s).sType(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO).pSetLayouts(dsl).pPushConstantRanges(pcr);
       LongBuffer ppl = s.mallocLong(1); check(vkCreatePipelineLayout(device, pl, null, ppl), "mkPL"); pipelineLayout = ppl.get(0);
@@ -575,9 +576,12 @@ public final class VulkanRenderer implements AutoCloseable {
       transLayout(s, img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
       long sb = mkStagingBuf(s, size);
-      { PointerBuffer mp = s.mallocPointer(1); vkMapMemory(device, sbMem(sb), 0L, (long) size, 0, mp); MemoryUtil.memCopy(buf, mp.getByteBuffer(0, size)); vkUnmapMemory(device, sbMem(sb)); }
-      copyStagingImg(s, sb, img, w, h);
-      destroyStagingBuf(s, sb);
+      try {
+        { PointerBuffer mp = s.mallocPointer(1); vkMapMemory(device, sbMem(sb), 0L, (long) size, 0, mp); MemoryUtil.memCopy(buf, mp.getByteBuffer(0, size)); vkUnmapMemory(device, sbMem(sb)); }
+        copyStagingImg(s, sb, img, w, h);
+      } finally {
+        destroyStagingBuf(s, sb);
+      }
 
       transLayout(s, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
       long view = mkView(img, VK_FORMAT_R8G8B8A8_SRGB);
@@ -677,6 +681,7 @@ public final class VulkanRenderer implements AutoCloseable {
   public void recordCommandBuffer(int imgIdx, float[] proj, List<RenderCommand> cmds) {
     vkResetFences(device, new long[]{fences[frameIdx]});
     vkResetCommandBuffer(cmdBufs[frameIdx], 0);
+    cmds.sort(Comparator.naturalOrder());
     try (MemoryStack s = stackPush()) {
       check(vkBeginCommandBuffer(cmdBufs[frameIdx], VkCommandBufferBeginInfo.calloc(s).sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO)), "vkBeg");
 
@@ -704,20 +709,33 @@ public final class VulkanRenderer implements AutoCloseable {
       // Direct write to host-visible vertex buffer (no staging / no vkQueueWaitIdle)
       int totalVtx = 0, totalIdx = 0;
       for (RenderCommand c : cmds) { totalVtx += c.vertexCount; totalIdx += c.indexCount; }
-      int vtxBytes = totalVtx * VTX_SIZE;
-      if (vtxBytes > vBufSize) {
-        System.err.println("Vertex buffer overflow! " + vtxBytes + " > " + vBufSize);
-        vtxBytes = (int) vBufSize;
+      int maxVtx = (int)(vBufSize / VTX_SIZE);
+      int actualVtx = Math.min(totalVtx, maxVtx);
+      int cmdCount = 0;
+      if (actualVtx < totalVtx) {
+        int v = 0;
+        for (RenderCommand c : cmds) {
+          if (v + c.vertexCount > maxVtx) break;
+          v += c.vertexCount;
+          cmdCount++;
+        }
+        if (cmdCount < cmds.size()) {
+          System.err.println("[VulkanRenderer] Vertex buffer overflow: " + (totalVtx * VTX_SIZE) + " > " + vBufSize
+              + ", dropping " + (cmds.size() - cmdCount) + "/" + cmds.size() + " commands");
+        }
+        actualVtx = v;
+      } else {
+        cmdCount = cmds.size();
       }
+      int vtxBytes = actualVtx * VTX_SIZE;
+
       if (vtxBytes > 0) {
         PointerBuffer vmp = s.mallocPointer(1);
         vkMapMemory(device, vMemHost[frameIdx], 0L, (long) vtxBytes, 0, vmp);
         FloatBuffer fb = vmp.getByteBuffer(0, vtxBytes).asFloatBuffer();
-        int written = 0;
-        for (RenderCommand c : cmds) {
-          if (written + c.vertices.length * 4 > vtxBytes) break;
+        for (int ci = 0; ci < cmdCount; ci++) {
+          RenderCommand c = cmds.get(ci);
           for (float v : c.vertices) fb.put(v);
-          written += c.vertices.length * 4;
         }
         vkUnmapMemory(device, vMemHost[frameIdx]);
       }
@@ -726,10 +744,12 @@ public final class VulkanRenderer implements AutoCloseable {
       vkCmdBindVertexBuffers(cmdBufs[frameIdx], 0, bufs, offsets);
       vkCmdBindIndexBuffer(cmdBufs[frameIdx], iBuf, 0, VK_INDEX_TYPE_UINT32);
 
-      IntBuffer pc = s.mallocInt(1);
+      IntBuffer pc = s.mallocInt(2);
       int vOff = 0, iOff = 0;
-      for (RenderCommand c : cmds) {
+      for (int ci = 0; ci < cmdCount; ci++) {
+        RenderCommand c = cmds.get(ci);
         pc.put(0, c.textureIndex);
+        pc.put(1, c.z);
         vkCmdPushConstants(cmdBufs[frameIdx], pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, pc);
         vkCmdDrawIndexed(cmdBufs[frameIdx], c.indexCount, 1, iOff, vOff, 0);
         vOff += c.vertexCount; iOff += c.indexCount;
@@ -815,6 +835,8 @@ public final class VulkanRenderer implements AutoCloseable {
     if (swapchain != VK_NULL_HANDLE) vkDestroySwapchainKHR(device, swapchain, null);
     if (swapchainFBs != null) for (long f : swapchainFBs) if (f != VK_NULL_HANDLE) vkDestroyFramebuffer(device, f, null);
     if (swapchainViews != null) for (long v : swapchainViews) if (v != VK_NULL_HANDLE) vkDestroyImageView(device, v, null);
+    for (Map.Entry<Long, Long> e : stagingMap.entrySet()) { vkFreeMemory(device, e.getValue(), null); vkDestroyBuffer(device, e.getKey(), null); }
+    stagingMap.clear();
     if (descriptorPool != VK_NULL_HANDLE) vkDestroyDescriptorPool(device, descriptorPool, null);
     if (descriptorSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null);
     if (commandPool != VK_NULL_HANDLE) vkDestroyCommandPool(device, commandPool, null);
@@ -837,20 +859,22 @@ public final class VulkanRenderer implements AutoCloseable {
 
   private static class SwapCaps { VkSurfaceCapabilitiesKHR cap; VkSurfaceFormatKHR.Buffer fmts; IntBuffer modes; boolean ok() { return cap != null && fmts != null && fmts.remaining() > 0 && modes != null && modes.remaining() > 0; } }
 
-  public static final class RenderCommand {
+  public static final class RenderCommand implements Comparable<RenderCommand> {
     public final float[] vertices;
     public final int vertexCount;
     public final int indexCount;
     public final int textureIndex;
-    public RenderCommand(float[] v, int ti) {
-      this.vertices = v; this.vertexCount = v.length / 8; this.indexCount = (vertexCount / 4) * 6; this.textureIndex = ti;
+    public final int z;
+    public RenderCommand(float[] v, int ti, int z) {
+      this.vertices = v; this.vertexCount = v.length / 8; this.indexCount = (vertexCount / 4) * 6; this.textureIndex = ti; this.z = z;
       if (vertexCount < 1 || vertexCount % 4 != 0) throw new IllegalArgumentException("vertexCount must be a multiple of 4, got " + vertexCount);
     }
-    public static RenderCommand texQuad(float x, float y, float w, float h, float u0, float v0, float u1, float v1, int ti, float r, float g, float b, float a) {
-      return new RenderCommand(new float[]{x,y+h,u0,v1,r,g,b,a, x+w,y+h,u1,v1,r,g,b,a, x+w,y,u1,v0,r,g,b,a, x,y,u0,v0,r,g,b,a}, ti);
+    public static RenderCommand texQuad(float x, float y, float w, float h, float u0, float v0, float u1, float v1, int ti, float r, float g, float b, float a, int z) {
+      return new RenderCommand(new float[]{x,y+h,u0,v1,r,g,b,a, x+w,y+h,u1,v1,r,g,b,a, x+w,y,u1,v0,r,g,b,a, x,y,u0,v0,r,g,b,a}, ti, z);
     }
-    public static RenderCommand rect(float x, float y, float w, float h, float r, float g, float b, float a) {
-      return new RenderCommand(new float[]{x,y,0,0,r,g,b,a, x+w,y,0,0,r,g,b,a, x+w,y+h,0,0,r,g,b,a, x,y+h,0,0,r,g,b,a}, -1);
+    public static RenderCommand rect(float x, float y, float w, float h, float r, float g, float b, float a, int z) {
+      return new RenderCommand(new float[]{x,y,0,0,r,g,b,a, x+w,y,0,0,r,g,b,a, x+w,y+h,0,0,r,g,b,a, x,y+h,0,0,r,g,b,a}, -1, z);
     }
+    @Override public int compareTo(RenderCommand o) { return Integer.compare(this.z, o.z); }
   }
 }

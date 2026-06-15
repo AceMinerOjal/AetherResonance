@@ -17,9 +17,6 @@ import tile.TiledMap;
 import tile.TiledMap.Layer;
 import tile.TiledMap.Tileset;
 
-/**
- * Bridges game state to Vulkan render commands.
- */
 public final class VulkanGameRenderer {
   private static final float WHITE = 1.0f;
   private static final float FALLBACK_R = 0.3f;
@@ -33,21 +30,26 @@ public final class VulkanGameRenderer {
       new SpriteSheetLayout(4, 4, FRAME_SIZE, FRAME_SIZE);
 
   private final VulkanRenderer renderer;
+  private final int screenWidth;
+  private final int screenHeight;
   private final Map<Tileset, Integer> tilesetTex = new IdentityHashMap<>();
   private final Map<String, Integer> walkTex = new HashMap<>();
   private final Map<String, Integer> actionTex = new HashMap<>();
+  private final Map<String, Integer> enemyTex = new HashMap<>();
 
   public VulkanGameRenderer(VulkanRenderer renderer, int screenWidth, int screenHeight) {
     this.renderer = renderer;
+    this.screenWidth = screenWidth;
+    this.screenHeight = screenHeight;
   }
 
   public List<VulkanRenderer.RenderCommand> buildLocalCommands(
-      TiledMap map, List<Player> players, List<Enemy> enemies) {
+      TiledMap map, List<Player> players, List<Enemy> enemies, float camX, float camY) {
     ensureTilesetTexturesLoaded(map);
     ensureLivePlayerTexturesLoaded(players);
 
     List<VulkanRenderer.RenderCommand> commands = new ArrayList<>();
-    buildTileCommands(commands, map);
+    buildTileCommands(commands, map, camX, camY);
     for (Player player : players) {
       appendPlayerCommand(commands, PlayerVisual.fromPlayer(player));
     }
@@ -58,12 +60,12 @@ public final class VulkanGameRenderer {
     return commands;
   }
 
-  public List<VulkanRenderer.RenderCommand> buildRemoteCommands(TiledMap map, NetSnapshot snapshot) {
+  public List<VulkanRenderer.RenderCommand> buildRemoteCommands(TiledMap map, NetSnapshot snapshot, float camX, float camY) {
     ensureTilesetTexturesLoaded(map);
     ensureSnapshotPlayerTexturesLoaded(snapshot.players());
 
     List<VulkanRenderer.RenderCommand> commands = new ArrayList<>();
-    buildTileCommands(commands, map);
+    buildTileCommands(commands, map, camX, camY);
     for (NetPlayerState state : snapshot.players()) {
       appendPlayerCommand(commands, PlayerVisual.fromSnapshot(state));
     }
@@ -74,72 +76,79 @@ public final class VulkanGameRenderer {
   }
 
   private void ensureTilesetTexturesLoaded(TiledMap map) {
-    if (map == null) {
-      return;
-    }
+    if (map == null) return;
     for (Tileset tileset : map.getTilesets()) {
-      if (tilesetTex.containsKey(tileset) || tileset.getImage() == null) {
-        continue;
-      }
+      if (tilesetTex.containsKey(tileset) || tileset.getImage() == null) continue;
       int slot = renderer.loadTexture(tileset.getImage());
       if (slot < 0) {
         System.err.println("[VulkanGameRenderer] Failed to load tileset texture, using fallback.");
-        tilesetTex.put(tileset, 0); // fallback to default white texture
+        tilesetTex.put(tileset, 0);
       } else {
         tilesetTex.put(tileset, slot);
       }
     }
   }
 
-  private void buildTileCommands(List<VulkanRenderer.RenderCommand> commands, TiledMap map) {
-    if (map == null) {
-      return;
-    }
+  private void buildTileCommands(List<VulkanRenderer.RenderCommand> commands, TiledMap map, float camX, float camY) {
+    if (map == null) return;
 
     int tileWidth = map.getTileWidth();
     int tileHeight = map.getTileHeight();
     int mapWidth = map.getWidthTiles();
     int mapHeight = map.getHeightTiles();
 
-    for (Layer layer : map.getLayers()) {
-      if (!layer.isVisible()) {
-        continue;
-      }
+    // Viewport culling: only tiles within the visible rectangle
+    int minTX = Math.max(0, (int) Math.floor(camX / tileWidth));
+    int minTY = Math.max(0, (int) Math.floor(camY / tileHeight));
+    int maxTX = Math.min(mapWidth - 1, (int) Math.ceil((camX + screenWidth) / tileWidth));
+    int maxTY = Math.min(mapHeight - 1, (int) Math.ceil((camY + screenHeight) / tileHeight));
+
+    for (int li = 0; li < map.getLayerCount(); li++) {
+      Layer layer = map.getLayer(li);
+      if (!layer.isVisible()) continue;
+      int z = li;
 
       int[] data = layer.getData();
-      for (int tileY = 0; tileY < mapHeight; tileY++) {
-        for (int tileX = 0; tileX < mapWidth; tileX++) {
+      // Batch tiles by texture slot: accumulate vertices per texture, flush per layer
+      Map<Integer, List<float[]>> batch = new HashMap<>();
+      for (int tileY = minTY; tileY <= maxTY; tileY++) {
+        for (int tileX = minTX; tileX <= maxTX; tileX++) {
           int gid = data[tileY * mapWidth + tileX];
-          if (gid == 0) {
-            continue;
-          }
+          if (gid == 0) continue;
 
           Tileset tileset = resolveTileset(map, gid);
-          if (tileset == null) {
-            continue;
-          }
+          if (tileset == null) continue;
 
           Integer textureIndex = tilesetTex.get(tileset);
-          if (textureIndex == null) {
-            continue;
-          }
+          if (textureIndex == null) continue;
 
           TileUv tileUv = resolveTileUv(tileset, gid);
-          commands.add(VulkanRenderer.RenderCommand.texQuad(
-              tileX * tileWidth,
-              tileY * tileHeight,
-              tileWidth,
-              tileHeight,
-              tileUv.u0(),
-              tileUv.v0(),
-              tileUv.u1(),
-              tileUv.v1(),
-              textureIndex,
-              WHITE,
-              WHITE,
-              WHITE,
-              WHITE));
+          float px = tileX * tileWidth;
+          float py = tileY * tileHeight;
+
+          batch.computeIfAbsent(textureIndex, k -> new ArrayList<>())
+              .add(new float[]{px, py, tileUv.u0(), tileUv.v0(), tileUv.u1(), tileUv.v1()});
         }
+      }
+
+      // Flush batch as merged commands (one per texture per layer)
+      for (Map.Entry<Integer, List<float[]>> entry : batch.entrySet()) {
+        List<float[]> quads = entry.getValue();
+        int ti = entry.getKey();
+        float[] verts = new float[quads.size() * 4 * 8];
+        int vi = 0;
+        for (float[] q : quads) {
+          float px = q[0], py = q[1], u0 = q[2], v0 = q[3], u1 = q[4], v1 = q[5];
+          verts[vi++] = px;       verts[vi++] = py + tileHeight; verts[vi++] = u0;  verts[vi++] = v1;
+          verts[vi++] = WHITE;    verts[vi++] = WHITE;           verts[vi++] = WHITE; verts[vi++] = WHITE;
+          verts[vi++] = px + tileWidth; verts[vi++] = py + tileHeight; verts[vi++] = u1;  verts[vi++] = v1;
+          verts[vi++] = WHITE;    verts[vi++] = WHITE;           verts[vi++] = WHITE; verts[vi++] = WHITE;
+          verts[vi++] = px + tileWidth; verts[vi++] = py;        verts[vi++] = u1;    verts[vi++] = v0;
+          verts[vi++] = WHITE;    verts[vi++] = WHITE;           verts[vi++] = WHITE; verts[vi++] = WHITE;
+          verts[vi++] = px;       verts[vi++] = py;              verts[vi++] = u0;    verts[vi++] = v0;
+          verts[vi++] = WHITE;    verts[vi++] = WHITE;           verts[vi++] = WHITE; verts[vi++] = WHITE;
+        }
+        commands.add(new VulkanRenderer.RenderCommand(verts, ti, z));
       }
     }
   }
@@ -161,7 +170,6 @@ public final class VulkanGameRenderer {
     int columns = tileset.getColumns();
     int margin = tileset.getMargin();
     int spacing = tileset.getSpacing();
-    int rows = Math.max(1, (tileset.getTileCount() + columns - 1) / columns); // ceiling division
     int column = localId % columns;
     int row = localId / columns;
 
@@ -177,6 +185,8 @@ public final class VulkanGameRenderer {
     return new TileUv(u0, v0, u1, v1);
   }
 
+  // -- Player textures --
+
   private void ensureLivePlayerTexturesLoaded(List<Player> players) {
     for (Player player : players) {
       ensurePlayerTexturesLoaded(player.getAppearanceId());
@@ -190,88 +200,128 @@ public final class VulkanGameRenderer {
   }
 
   private void ensurePlayerTexturesLoaded(String appearanceId) {
-    if (appearanceId == null || appearanceId.isBlank() || walkTex.containsKey(appearanceId)) {
-      return;
-    }
+    if (appearanceId == null || appearanceId.isBlank() || walkTex.containsKey(appearanceId)) return;
 
     SpriteAssets assets = SpriteAssets.loadPlayer(appearanceId);
-    if (!assets.isLoaded()) {
-      return;
-    }
+    if (!assets.isLoaded()) return;
 
     int walkSlot = renderer.loadTexture(assets.walkSheet());
     int actionSlot = renderer.loadTexture(assets.actionSheet());
     if (walkSlot < 0 || actionSlot < 0) {
       System.err.println("[VulkanGameRenderer] Failed to load player textures for: " + appearanceId);
-      return; // don't cache — retry on next call
+      return;
     }
     walkTex.put(appearanceId, walkSlot);
     actionTex.put(appearanceId, actionSlot);
   }
 
+  // -- Enemy textures --
+
+  private void ensureEnemyTextureLoaded(int variant) {
+    String key = "enemy-" + variant;
+    if (enemyTex.containsKey(key)) return;
+
+    SpriteAssets assets = SpriteAssets.loadPlayer("enemies/" + key);
+    if (!assets.isLoaded()) return;
+
+    int walkSlot = renderer.loadTexture(assets.walkSheet());
+    int actionSlot = renderer.loadTexture(assets.actionSheet());
+    if (walkSlot < 0 || actionSlot < 0) return;
+    enemyTex.put(key, walkSlot);
+  }
+
+  // -- Player command --
+
   private void appendPlayerCommand(List<VulkanRenderer.RenderCommand> commands, PlayerVisual player) {
+    int z = 1000;
+
     if (player.appearanceId().isBlank()) {
       commands.add(VulkanRenderer.RenderCommand.rect(
-          player.x(),
-          player.y(),
-          player.width(),
-          player.height(),
-          FALLBACK_R,
-          FALLBACK_G,
-          FALLBACK_B,
-          WHITE));
+          player.x(), player.y(), player.width(), player.height(),
+          FALLBACK_R, FALLBACK_G, FALLBACK_B, WHITE, z));
       return;
     }
 
     TextureSelection texture = resolvePlayerTexture(player.appearanceId(), player.animation());
     if (texture.textureIndex() == null) {
-      // Fallback: render as solid-color rect when texture not yet available
       commands.add(VulkanRenderer.RenderCommand.rect(
-          player.x(),
-          player.y(),
-          player.width(),
-          player.height(),
-          FALLBACK_R,
-          FALLBACK_G,
-          FALLBACK_B,
-          WHITE));
+          player.x(), player.y(), player.width(), player.height(),
+          FALLBACK_R, FALLBACK_G, FALLBACK_B, WHITE, z));
       return;
     }
 
     SpriteUv spriteUv = resolveSpriteUv(texture.layout(), player.animation(), player.direction(), player.frame());
     if (player.direction() == Entity.Direction.LEFT) {
       commands.add(VulkanRenderer.RenderCommand.texQuad(
-          player.x(),
-          player.y(),
-          player.width(),
-          player.height(),
-          spriteUv.u1(),
-          spriteUv.v0(),
-          spriteUv.u0(),
-          spriteUv.v1(),
-          texture.textureIndex(),
-          WHITE,
-          WHITE,
-          WHITE,
-          WHITE));
+          player.x(), player.y(), player.width(), player.height(),
+          spriteUv.u1(), spriteUv.v0(), spriteUv.u0(), spriteUv.v1(),
+          texture.textureIndex(), WHITE, WHITE, WHITE, WHITE, z));
       return;
     }
 
     commands.add(VulkanRenderer.RenderCommand.texQuad(
-        player.x(),
-        player.y(),
-        player.width(),
-        player.height(),
-        spriteUv.u0(),
-        spriteUv.v0(),
-        spriteUv.u1(),
-        spriteUv.v1(),
-        texture.textureIndex(),
-        WHITE,
-        WHITE,
-        WHITE,
-        WHITE));
+        player.x(), player.y(), player.width(), player.height(),
+        spriteUv.u0(), spriteUv.v0(), spriteUv.u1(), spriteUv.v1(),
+        texture.textureIndex(), WHITE, WHITE, WHITE, WHITE, z));
   }
+
+  // -- Enemy command --
+
+  private void appendEnemyCommand(List<VulkanRenderer.RenderCommand> commands, EnemyVisual enemy) {
+    int z = 1001;
+
+    String key = "enemy-" + enemy.variant;
+    Integer texSlot = enemyTex.get(key);
+    if (texSlot != null) {
+      // Use loaded enemy sprite sheet (same walk layout as players)
+      SpriteUv spriteUv = resolveSpriteUv(WALK_LAYOUT, enemy.animation(), enemy.direction(), enemy.frame());
+      if (enemy.direction() == Entity.Direction.LEFT) {
+        commands.add(VulkanRenderer.RenderCommand.texQuad(
+            enemy.x(), enemy.y(), enemy.width(), enemy.height(),
+            spriteUv.u1(), spriteUv.v0(), spriteUv.u0(), spriteUv.v1(),
+            texSlot, WHITE, WHITE, WHITE, WHITE, z));
+      } else {
+        commands.add(VulkanRenderer.RenderCommand.texQuad(
+            enemy.x(), enemy.y(), enemy.width(), enemy.height(),
+            spriteUv.u0(), spriteUv.v0(), spriteUv.u1(), spriteUv.v1(),
+            texSlot, WHITE, WHITE, WHITE, WHITE, z));
+      }
+      return;
+    }
+
+    // Try loading the enemy texture on demand
+    ensureEnemyTextureLoaded(enemy.variant);
+    texSlot = enemyTex.get(key);
+    if (texSlot != null) {
+      SpriteUv spriteUv = resolveSpriteUv(WALK_LAYOUT, enemy.animation(), enemy.direction(), enemy.frame());
+      if (enemy.direction() == Entity.Direction.LEFT) {
+        commands.add(VulkanRenderer.RenderCommand.texQuad(
+            enemy.x(), enemy.y(), enemy.width(), enemy.height(),
+            spriteUv.u1(), spriteUv.v0(), spriteUv.u0(), spriteUv.v1(),
+            texSlot, WHITE, WHITE, WHITE, WHITE, z));
+      } else {
+        commands.add(VulkanRenderer.RenderCommand.texQuad(
+            enemy.x(), enemy.y(), enemy.width(), enemy.height(),
+            spriteUv.u0(), spriteUv.v0(), spriteUv.u1(), spriteUv.v1(),
+            texSlot, WHITE, WHITE, WHITE, WHITE, z));
+      }
+      return;
+    }
+
+    // Fallback: colored rect
+    float r, g, b;
+    if (enemy.variant == 0) {
+      r = 0.2f; g = 0.8f; b = 0.2f;
+    } else {
+      r = 0.4f + 0.1f * (enemy.variant % 5);
+      g = 0.3f + 0.1f * ((enemy.variant * 3) % 5);
+      b = 0.5f + 0.1f * ((enemy.variant * 7) % 5);
+    }
+    commands.add(VulkanRenderer.RenderCommand.rect(
+        enemy.x(), enemy.y(), enemy.width(), enemy.height(), r, g, b, WHITE, z));
+  }
+
+  // -- Texture resolution helpers --
 
   private TextureSelection resolvePlayerTexture(String appearanceId, Entity.AnimationState animation) {
     boolean isAction = animation == Entity.AnimationState.ATTACK || animation == Entity.AnimationState.DIE;
@@ -289,141 +339,67 @@ public final class VulkanGameRenderer {
     float u0 = (float) (frame * layout.frameWidth()) / layout.sheetWidth();
     float v0 = (float) (row * layout.frameHeight()) / layout.sheetHeight();
     return new SpriteUv(
-        u0,
-        v0,
+        u0, v0,
         u0 + (float) layout.frameWidth() / layout.sheetWidth(),
         v0 + (float) layout.frameHeight() / layout.sheetHeight());
   }
 
-  private void appendEnemyCommand(List<VulkanRenderer.RenderCommand> commands, EnemyVisual enemy) {
-    // Render enemies as colored rects until sprite assets are available
-    float r, g, b;
-    if (enemy.variant == 0) {
-      // Slime: green
-      r = 0.2f; g = 0.8f; b = 0.2f;
-    } else {
-      // Other variants: variant-tinted
-      r = 0.4f + 0.1f * (enemy.variant % 5);
-      g = 0.3f + 0.1f * ((enemy.variant * 3) % 5);
-      b = 0.5f + 0.1f * ((enemy.variant * 7) % 5);
-    }
-    commands.add(VulkanRenderer.RenderCommand.rect(
-        enemy.x(), enemy.y(), enemy.width(), enemy.height(), r, g, b, WHITE));
-  }
+  // -- Parsing helpers --
 
   private static Entity.Direction parseDirection(String raw) {
-    try {
-      return Entity.Direction.valueOf(raw);
-    } catch (Exception ignored) {
-      return Entity.Direction.DOWN;
-    }
+    try { return Entity.Direction.valueOf(raw); } catch (Exception ignored) { return Entity.Direction.DOWN; }
   }
 
   private static Entity.AnimationState parseAnimation(String raw) {
-    try {
-      return Entity.AnimationState.valueOf(raw);
-    } catch (Exception ignored) {
-      return Entity.AnimationState.IDLE;
-    }
+    try { return Entity.AnimationState.valueOf(raw); } catch (Exception ignored) { return Entity.AnimationState.IDLE; }
   }
 
   private static int parseEnemyVariant(String appearanceId) {
-    if (appearanceId == null || !appearanceId.startsWith("enemy-")) {
-      return 0;
-    }
-    try {
-      return Integer.parseInt(appearanceId.substring("enemy-".length()));
-    } catch (NumberFormatException ignored) {
-      return 0;
-    }
+    if (appearanceId == null || !appearanceId.startsWith("enemy-")) return 0;
+    try { return Integer.parseInt(appearanceId.substring("enemy-".length())); } catch (NumberFormatException ignored) { return 0; }
   }
 
-  private record TileUv(float u0, float v0, float u1, float v1) {
-  }
+  // -- Records --
 
-  private record SpriteUv(float u0, float v0, float u1, float v1) {
-  }
-
-  private record TextureSelection(Integer textureIndex, SpriteSheetLayout layout) {
-  }
+  private record TileUv(float u0, float v0, float u1, float v1) {}
+  private record SpriteUv(float u0, float v0, float u1, float v1) {}
+  private record TextureSelection(Integer textureIndex, SpriteSheetLayout layout) {}
 
   private record PlayerVisual(
-      String appearanceId,
-      float x,
-      float y,
-      float width,
-      float height,
-      Entity.Direction direction,
-      Entity.AnimationState animation,
-      int frame) {
+      String appearanceId, float x, float y, float width, float height,
+      Entity.Direction direction, Entity.AnimationState animation, int frame) {
     static PlayerVisual fromPlayer(Player player) {
-      return new PlayerVisual(
-          blankSafe(player.getAppearanceId()),
-          (float) player.getX(),
-          (float) player.getY(),
-          player.getSpriteWidth(),
-          player.getSpriteHeight(),
-          player.getDirection(),
-          player.getCurrentAnimation(),
-          player.getCurrentFrame());
+      return new PlayerVisual(blankSafe(player.getAppearanceId()),
+          (float) player.getX(), (float) player.getY(),
+          player.getSpriteWidth(), player.getSpriteHeight(),
+          player.getDirection(), player.getCurrentAnimation(), player.getCurrentFrame());
     }
-
     static PlayerVisual fromSnapshot(NetPlayerState state) {
-      return new PlayerVisual(
-          blankSafe(state.appearanceId()),
-          (float) state.x(),
-          (float) state.y(),
-          (float) state.width(),
-          (float) state.height(),
-          parseDirection(state.direction()),
-          parseAnimation(state.animation()),
-          state.frame());
+      return new PlayerVisual(blankSafe(state.appearanceId()),
+          (float) state.x(), (float) state.y(), (float) state.width(), (float) state.height(),
+          parseDirection(state.direction()), parseAnimation(state.animation()), state.frame());
     }
   }
 
   private record EnemyVisual(
-      int variant,
-      float x,
-      float y,
-      float width,
-      float height,
-      Entity.Direction direction,
-      Entity.AnimationState animation,
-      int frame) {
+      int variant, float x, float y, float width, float height,
+      Entity.Direction direction, Entity.AnimationState animation, int frame) {
     static EnemyVisual fromEnemy(Enemy enemy) {
-      return new EnemyVisual(
-          enemy.getMovementVariant(),
-          (float) enemy.getX(),
-          (float) enemy.getY(),
-          enemy.getSpriteWidth(),
-          enemy.getSpriteHeight(),
-          enemy.getDirection(),
-          enemy.getCurrentAnimation(),
-          enemy.getCurrentFrame());
+      return new EnemyVisual(enemy.getMovementVariant(),
+          (float) enemy.getX(), (float) enemy.getY(),
+          enemy.getSpriteWidth(), enemy.getSpriteHeight(),
+          enemy.getDirection(), enemy.getCurrentAnimation(), enemy.getCurrentFrame());
     }
-
     static EnemyVisual fromSnapshot(NetEnemyState state) {
-      return new EnemyVisual(
-          parseEnemyVariant(state.appearanceId()),
-          (float) state.x(),
-          (float) state.y(),
-          (float) state.width(),
-          (float) state.height(),
-          parseDirection(state.direction()),
-          parseAnimation(state.animation()),
-          state.frame());
+      return new EnemyVisual(parseEnemyVariant(state.appearanceId()),
+          (float) state.x(), (float) state.y(), (float) state.width(), (float) state.height(),
+          parseDirection(state.direction()), parseAnimation(state.animation()), state.frame());
     }
   }
 
   private record SpriteSheetLayout(int cols, int rows, int frameWidth, int frameHeight) {
-    int sheetWidth() {
-      return cols * frameWidth;
-    }
-
-    int sheetHeight() {
-      return rows * frameHeight;
-    }
-
+    int sheetWidth() { return cols * frameWidth; }
+    int sheetHeight() { return rows * frameHeight; }
     int resolveRow(Entity.AnimationState animation, Entity.Direction direction) {
       int baseRow = switch (animation) {
         case IDLE -> 0;
@@ -440,7 +416,5 @@ public final class VulkanGameRenderer {
     }
   }
 
-  private static String blankSafe(String value) {
-    return value == null ? "" : value;
-  }
+  private static String blankSafe(String value) { return value == null ? "" : value; }
 }

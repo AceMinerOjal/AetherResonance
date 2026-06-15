@@ -9,6 +9,9 @@ import java.util.List;
 import org.lwjgl.glfw.*;
 import org.lwjgl.system.MemoryUtil;
 
+import entity.enemy.DefaultEnemy;
+import entity.enemy.EnemyFactory;
+import entity.enemy.Slime;
 import entity.player.Player;
 import net.NetInput;
 import net.NetSnapshot;
@@ -76,18 +79,29 @@ public class Main {
     VulkanRenderer renderer = new VulkanRenderer(window, screenWidth, screenHeight);
     VulkanGameRenderer gameRenderer = new VulkanGameRenderer(renderer, screenWidth, screenHeight);
 
-    AudioManager.init();
-    // Load sounds here (placeholders)
-    AudioManager.loadSound("attack", "audio/attack.ogg");
-    AudioManager.loadSound("portal", "audio/portal.ogg");
-    AudioManager.loadSound("click", "audio/click.ogg");
+    AudioManager audioManager = new AudioManager();
+    if (!audioManager.init()) {
+      System.err.println("AudioManager init failed; continuing without audio.");
+    }
+    audioManager.loadSound("attack", "audio/attack.ogg");
+    audioManager.loadSound("portal", "audio/portal.ogg");
+    audioManager.loadSound("click", "audio/click.ogg");
+
+    BiomeRegistry biomeRegistry = new BiomeRegistry();
+    biomeRegistry.load("data/biomes.json");
+    SoundtrackManager soundtrack = new SoundtrackManager(audioManager, biomeRegistry);
 
     NetworkMode networkMode = launchOptions.networkConfig().mode();
     NetworkSession networkSession = networkMode.isLocal() ? null : new NetworkSession(launchOptions.networkConfig());
 
-    PlayerRoster playerRoster = new PlayerRoster(networkMode, keyHandler);
-    LevelManager levelManager = new LevelManager();
-    WorldSimulator worldSimulator = new WorldSimulator(levelManager, playerRoster.players(), screenWidth, screenHeight);
+    PlayerRoster playerRoster = new PlayerRoster(networkMode, keyHandler, audioManager);
+    LevelManager levelManager = new LevelManager(audioManager);
+    EnemyFactory enemyFactory = (x, y, variant, spawnTileX, spawnTileY, layerName) ->
+        "slime".equalsIgnoreCase(layerName)
+            ? new Slime(x, y, spawnTileX, spawnTileY)
+            : new DefaultEnemy(x, y, variant, spawnTileX, spawnTileY);
+    WorldSimulator worldSimulator = new WorldSimulator(levelManager, playerRoster.players(), screenWidth, screenHeight,
+        enemyFactory);
 
     registerMaps(levelManager);
 
@@ -134,10 +148,16 @@ public class Main {
         pendingFrames--;
       }
 
-      renderFrame(renderer, gameRenderer, levelManager, playerRoster, worldSimulator, clientSnapshot,
-          networkMode, peerDisconnected, screenWidth, screenHeight);
+      Player primary = playerRoster.findPlayerBySlot(0);
+      float camX = primary != null ? (float) primary.getX() : 0;
+      float camY = primary != null ? (float) primary.getY() : 0;
 
-      updateAudioManager(playerRoster);
+      renderFrame(renderer, gameRenderer, levelManager, playerRoster, worldSimulator, clientSnapshot,
+          networkMode, peerDisconnected, screenWidth, screenHeight, camX, camY);
+
+      updateAudioManager(playerRoster, audioManager);
+      soundtrack.update(camX, camY, levelManager.getCurrentMap(), 1.0 / UPS);
+      audioManager.updateMusicFade();
 
       long sleepMs = (long) ((drawInterval - elapsedNs) / 1_000_000);
       if (sleepMs > 0) {
@@ -146,16 +166,16 @@ public class Main {
     }
 
     if (networkSession != null) networkSession.close();
-    AudioManager.cleanup();
+    audioManager.cleanup();
     renderer.close();
     glfwDestroyWindow(window);
     glfwTerminate();
   }
 
-  private static void updateAudioManager(PlayerRoster playerRoster) {
+  private static void updateAudioManager(PlayerRoster playerRoster, AudioManager audioManager) {
     Player p = playerRoster.findPlayerBySlot(0);
     if (p != null) {
-      AudioManager.setListenerData((float) p.getX(), (float) p.getY(), 0.0f);
+      audioManager.setListenerData((float) p.getX(), (float) p.getY(), 0.0f);
     }
   }
 
@@ -299,30 +319,32 @@ public class Main {
   private static void renderFrame(VulkanRenderer renderer, VulkanGameRenderer gameRenderer,
       LevelManager levelManager, PlayerRoster playerRoster, WorldSimulator worldSimulator,
       NetSnapshot clientSnapshot, NetworkMode networkMode,
-      boolean peerDisconnected, int screenWidth, int screenHeight) {
+      boolean peerDisconnected, int screenWidth, int screenHeight, float camX, float camY) {
     try {
       renderer.beginFrame();
       int imageIndex = renderer.acquireNextImage();
       if (imageIndex < 0) return;
 
       List<RenderCommand> commands = networkMode.isPeer()
-          ? gameRenderer.buildRemoteCommands(levelManager.getCurrentMap(), clientSnapshot)
+          ? gameRenderer.buildRemoteCommands(levelManager.getCurrentMap(), clientSnapshot, camX, camY)
           : gameRenderer.buildLocalCommands(levelManager.getCurrentMap(),
-              playerRoster.players(), worldSimulator.enemies());
+              playerRoster.players(), worldSimulator.enemies(), camX, camY);
 
       if (networkMode.isPeer() && peerDisconnected)
-        commands.add(RenderCommand.rect(0, 0, screenWidth, 20, 1.0f, 0.0f, 0.0f, 0.7f));
+        commands.add(RenderCommand.rect(0, 0, screenWidth, 20, 1.0f, 0.0f, 0.0f, 0.7f, 9999));
 
-      renderer.recordCommandBuffer(imageIndex, buildOrthographicProjection(screenWidth, screenHeight), commands);
+      renderer.recordCommandBuffer(imageIndex, buildOrthographicProjection(screenWidth, screenHeight, camX, camY), commands);
       renderer.submitCommandBuffer(imageIndex);
     } catch (Exception ex) { System.err.println("Render error: " + ex.getMessage()); ex.printStackTrace(); }
   }
 
-  private static float[] buildOrthographicProjection(int width, int height) {
+  private static float[] buildOrthographicProjection(int width, int height, float camX, float camY) {
     float[] proj = new float[16];
     proj[0] = 2.0f / width;
     proj[5] = 2.0f / height;
-    proj[10] = 1.0f; proj[12] = -1.0f; proj[13] = -1.0f; proj[15] = 1.0f;
+    proj[12] = -1.0f - 2.0f * camX / width;
+    proj[13] = -1.0f - 2.0f * camY / height;
+    proj[10] = 1.0f; proj[15] = 1.0f;
     return proj;
   }
 

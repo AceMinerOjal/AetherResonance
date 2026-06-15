@@ -5,14 +5,21 @@ import java.util.List;
 import java.util.Map;
 
 import entity.player.Player;
+import main.AudioBus;
+import main.SoundCategory;
 
 public class LevelManager {
   private final Map<String, String> levelResources = new HashMap<>();
   private final Map<String, TiledMap> loadedMaps = new HashMap<>();
+  private final AudioBus audioBus;
 
   private String currentMapId;
   private TiledMap currentMap;
   private boolean portalLock;
+
+  public LevelManager(AudioBus audioBus) {
+    this.audioBus = audioBus;
+  }
 
   public void registerLevel(String mapId, String mapResourcePath) {
     levelResources.put(mapId, mapResourcePath);
@@ -79,11 +86,15 @@ public class LevelManager {
       double offsetY = (i / 2) * 24;
       party.get(i).setWorldPosition(spawnX + offsetX, spawnY + offsetY);
     }
-    main.AudioManager.playStaticSound("portal");
+    audioBus.playSound("portal", SoundCategory.AMBIENT);
   }
 
   public String getCurrentMapId() {
     return currentMapId;
+  }
+
+  public String getCurrentBiomeId() {
+    return currentMap != null ? currentMap.getBiomeId() : null;
   }
 
   public void setCurrentMap(String mapId) {

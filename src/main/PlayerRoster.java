@@ -36,13 +36,15 @@ public class PlayerRoster {
 
   private final NetworkMode networkMode;
   private final KeyHandler sharedKeyHandler;
+  private final AudioBus audioBus;
   private final KeyHandler[] slotKeyHandlers = new KeyHandler[MAX_PLAYERS];
   private final boolean[] joinedSlots = new boolean[MAX_PLAYERS];
   private final List<Player> players = new ArrayList<>();
 
-  public PlayerRoster(NetworkMode networkMode, KeyHandler sharedKeyHandler) {
+  public PlayerRoster(NetworkMode networkMode, KeyHandler sharedKeyHandler, AudioBus audioBus) {
     this.networkMode = networkMode;
     this.sharedKeyHandler = sharedKeyHandler;
+    this.audioBus = audioBus;
     initializeSlotKeyHandlers();
   }
 
@@ -195,10 +197,10 @@ public class PlayerRoster {
   private Player createPlayerForSlot(int slot, double x, double y) {
     KeyHandler slotKeyHandler = slotKeyHandlers[slot];
     return switch (slot) {
-      case 0 -> new Mage(x, y, slotKeyHandler, SLOT_CONTROLS[0]);
-      case 1 -> new Warrior(x, y, slotKeyHandler, SLOT_CONTROLS[1]);
-      case 2 -> new Tank(x, y, slotKeyHandler, SLOT_CONTROLS[2]);
-      case 3 -> new Priest(x, y, slotKeyHandler, SLOT_CONTROLS[3]);
+      case 0 -> new Mage(x, y, slotKeyHandler, SLOT_CONTROLS[0], audioBus);
+      case 1 -> new Warrior(x, y, slotKeyHandler, SLOT_CONTROLS[1], audioBus);
+      case 2 -> new Tank(x, y, slotKeyHandler, SLOT_CONTROLS[2], audioBus);
+      case 3 -> new Priest(x, y, slotKeyHandler, SLOT_CONTROLS[3], audioBus);
       default -> null;
     };
   }

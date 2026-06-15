@@ -77,18 +77,21 @@ public class TiledMap {
     private final int[] data;
     private final boolean visible;
     private final boolean collidable;
+    private final boolean enemySpawn;
 
-    public Layer(String name, int[] data, boolean visible, boolean collidable) {
+    public Layer(String name, int[] data, boolean visible, boolean collidable, boolean enemySpawn) {
       this.name = name;
       this.data = data;
       this.visible = visible;
       this.collidable = collidable;
+      this.enemySpawn = enemySpawn;
     }
 
     public String getName() { return name; }
     public int[] getData() { return data; }
     public boolean isVisible() { return visible; }
     public boolean isCollidable() { return collidable; }
+    public boolean isEnemySpawn() { return enemySpawn; }
   }
 
   public static final class Tileset {
@@ -165,6 +168,7 @@ public class TiledMap {
   private final List<Tileset> tilesets = new ArrayList<>();
   private final List<Portal> portals = new ArrayList<>();
   private final List<FriendlyFireZone> friendlyFireZones = new ArrayList<>();
+  private String biomeId = "plains";
 
   public TiledMap(int width, int height, int tileWidth, int tileHeight) {
     this.width = width;
@@ -187,6 +191,16 @@ public class TiledMap {
 
   public void addFriendlyFireZone(FriendlyFireZone zone) {
     friendlyFireZones.add(zone);
+  }
+
+  public void setBiomeId(String biomeId) {
+    if (biomeId != null && !biomeId.isBlank()) {
+      this.biomeId = biomeId;
+    }
+  }
+
+  public String getBiomeId() {
+    return biomeId;
   }
 
   public int getPixelWidth() {
@@ -215,6 +229,23 @@ public class TiledMap {
 
   public List<Tileset> getTilesets() {
     return tilesets;
+  }
+
+  public int getLayerCount() { return layers.size(); }
+
+  public Layer getLayer(int index) { return layers.get(index); }
+
+  public Layer getLayerByName(String name) {
+    for (Layer layer : layers) {
+      if (layer.name.equals(name)) return layer;
+    }
+    return null;
+  }
+
+  public int getGidAtTileInLayer(int tileX, int tileY, int layerIndex) {
+    if (tileX < 0 || tileY < 0 || tileX >= width || tileY >= height) return 0;
+    if (layerIndex < 0 || layerIndex >= layers.size()) return 0;
+    return layers.get(layerIndex).data[tileY * width + tileX];
   }
 
   public List<Layer> getLayers() {
@@ -292,7 +323,7 @@ public class TiledMap {
 
     int variant = -1;
     for (Layer layer : layers) {
-      if (layer.collidable || !layer.visible) {
+      if (layer.collidable || !layer.visible || layer.enemySpawn) {
         continue;
       }
       int gid = layer.data[tileY * width + tileX];
@@ -303,30 +334,32 @@ public class TiledMap {
     return variant;
   }
 
-  public List<int[]> getEnemySpawnTilesByVariant() {
-    // Collect all walkable tiles per variant, then pick up to MAX_ENEMIES_PER_VARIANT
-    // spread across each variant's available tiles.
-    Map<Integer, List<int[]>> tilesByVariant = new LinkedHashMap<>();
-    for (int tileY = 0; tileY < height; tileY++) {
-      for (int tileX = 0; tileX < width; tileX++) {
-        if (isTileBlocked(tileX, tileY)) {
-          continue;
-        }
-        int variant = getVariantAtTile(tileX, tileY);
-        if (variant < 0) continue;
-        tilesByVariant.computeIfAbsent(variant, k -> new ArrayList<>())
-            .add(new int[] { tileX, tileY, variant });
-      }
-    }
+  public record SpawnPoint(int tileX, int tileY, int variant, int layerIndex, String layerName) {}
 
-    // Return up to 4 enemies per variant, spread across available tiles.
-    final int MAX_PER_VARIANT = 4;
-    List<int[]> result = new ArrayList<>();
-    for (Map.Entry<Integer, List<int[]>> entry : tilesByVariant.entrySet()) {
-      List<int[]> tiles = entry.getValue();
-      int step = Math.max(1, tiles.size() / MAX_PER_VARIANT);
-      for (int i = 0; i < tiles.size() && result.size() / Math.max(1, tilesByVariant.size()) < MAX_PER_VARIANT; i += step) {
-        result.add(tiles.get(i));
+  public List<SpawnPoint> getEnemySpawnPoints() {
+    final int MAX_PER_LAYER = 4;
+    List<SpawnPoint> result = new ArrayList<>();
+    for (int li = 0; li < layers.size(); li++) {
+      Layer layer = layers.get(li);
+      if (!layer.enemySpawn || !layer.visible || layer.collidable) continue;
+
+      List<int[]> tiles = new ArrayList<>();
+      for (int ty = 0; ty < height; ty++) {
+        for (int tx = 0; tx < width; tx++) {
+          if (isTileBlocked(tx, ty)) continue;
+          int gid = layer.data[ty * width + tx];
+          if (gid == 0) continue;
+          int variant = getVariantAtTile(tx, ty);
+          if (variant < 0) variant = gid;
+          tiles.add(new int[] { tx, ty, variant });
+        }
+      }
+      if (tiles.isEmpty()) continue;
+
+      int step = Math.max(1, tiles.size() / MAX_PER_LAYER);
+      for (int i = 0; i < tiles.size() && result.size() / Math.max(1, layers.size()) < MAX_PER_LAYER; i += step) {
+        int[] t = tiles.get(i);
+        result.add(new SpawnPoint(t[0], t[1], t[2], li, layer.name));
       }
     }
     return result;

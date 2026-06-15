@@ -33,6 +33,17 @@ public final class TiledMapLoader {
     int tileHeight = asInt(root.get("tileheight"), "tileheight");
     TiledMap map = new TiledMap(width, height, tileWidth, tileHeight);
 
+    Object mapPropertiesObj = root.get("properties");
+    if (mapPropertiesObj instanceof List<?> mapProperties) {
+      for (Object propObj : mapProperties) {
+        Map<String, Object> property = asObject(propObj, "properties[]");
+        String propName = asString(property.get("name"), "properties[].name");
+        if ("biome".equals(propName) && property.get("value") instanceof String biomeVal) {
+          map.setBiomeId(biomeVal);
+        }
+      }
+    }
+
     List<Map<String, Object>> tilesetObjects = asObjectList(root.get("tilesets"), "tilesets");
     List<TiledMap.Tileset> tilesets = new ArrayList<>();
     for (Map<String, Object> tilesetObject : tilesetObjects) {
@@ -50,8 +61,9 @@ public final class TiledMapLoader {
         String name = asStringOrDefault(layerObject.get("name"), "Layer");
         boolean visible = asBooleanOrDefault(layerObject.get("visible"), true);
         boolean collidable = isLayerCollidable(name, layerObject);
+        boolean enemySpawn = isLayerEnemySpawn(layerObject);
         int[] data = asIntArray(layerObject.get("data"), width * height, "layers[].data");
-        map.addLayer(new TiledMap.Layer(name, data, visible, collidable));
+        map.addLayer(new TiledMap.Layer(name, data, visible, collidable, enemySpawn));
       } else if ("objectgroup".equals(type)) {
         parsePortals(layerObject, map);
         parseFriendlyFireZones(layerObject, map);
@@ -122,6 +134,20 @@ public final class TiledMapLoader {
       }
     }
     return "collision".equalsIgnoreCase(name);
+  }
+
+  private static boolean isLayerEnemySpawn(Map<String, Object> layerObject) {
+    Object propertiesObject = layerObject.get("properties");
+    if (propertiesObject instanceof List<?> properties) {
+      for (Object propertyObj : properties) {
+        Map<String, Object> property = asObject(propertyObj, "layers[].properties[]");
+        String propName = asString(property.get("name"), "layers[].properties[].name");
+        if ("enemySpawn".equals(propName)) {
+          return asBooleanOrDefault(property.get("value"), false);
+        }
+      }
+    }
+    return false;
   }
 
   private static void parsePortals(Map<String, Object> layerObject, TiledMap map) {

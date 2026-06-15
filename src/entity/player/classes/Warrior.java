@@ -2,6 +2,7 @@ package entity.player.classes;
 
 import java.util.List;
 
+import main.AudioBus;
 import main.KeyHandler;
 import main.PlayerControls;
 
@@ -14,9 +15,9 @@ import entity.player.SignatureElement;
 import entity.player.stats.Mana;
 
 public class Warrior extends Player {
-  public Warrior(double x, double y, KeyHandler kh, PlayerControls controls) {
+  public Warrior(double x, double y, KeyHandler kh, PlayerControls controls, AudioBus audioBus) {
     super(x, y, kh, controls, SignatureElement.LIGHTNING, PlayerRace.HUMAN,
-        List.of(Profession.FORESTING, Profession.WOODCUTTING));
+        List.of(Profession.FORESTING, Profession.WOODCUTTING), audioBus);
 
     this.hp = new Health(50, 50, 0.5);
     this.mana = new Mana(20, 20, 0.1);

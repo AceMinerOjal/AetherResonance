@@ -3,8 +3,10 @@ package entity.player;
 import lib.Entity;
 import lib.Hitbox;
 import lib.Timer;
+import main.AudioBus;
 import main.KeyHandler;
 import main.PlayerControls;
+import main.SoundCategory;
 import save.PlayerSaveState;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,6 +42,7 @@ public abstract class Player extends Entity implements EffectTarget {
   private final PlayerControls controls;
   private final PlayerRace race;
   private final List<Profession> professions;
+  protected final AudioBus audioBus;
   private int slot;
   private final List<Timer> activeEffects = new ArrayList<>();
   private final List<StatusEffect> activeStatusEffects = new ArrayList<>();
@@ -61,7 +64,7 @@ public abstract class Player extends Entity implements EffectTarget {
   private boolean friendlyFireEnabled;
 
   public Player(double x, double y, KeyHandler kh, PlayerControls controls, SignatureElement defaultElement,
-      PlayerRace race, List<Profession> professions) {
+      PlayerRace race, List<Profession> professions, AudioBus audioBus) {
     setPosition(x, y);
     // Keep feet/body collision tighter than full 32x32 sprite frame.
     setHitbox(20, 24, 6, 8);
@@ -70,6 +73,7 @@ public abstract class Player extends Entity implements EffectTarget {
     this.signatureElement = defaultElement;
     this.race = race;
     this.professions = List.copyOf(professions);
+    this.audioBus = audioBus;
     this.level = new Level();
   }
 
@@ -244,7 +248,7 @@ public abstract class Player extends Entity implements EffectTarget {
     }
     performSkill(slot);
     setAnimation(AnimationState.ATTACK);
-    main.AudioManager.playSound("attack", (float) getX(), (float) getY(), 0.0f, false);
+    audioBus.playSound("attack", SoundCategory.SFX, (float) getX(), (float) getY(), 0.0f, false);
     skillRecoveryRemaining = BASE_SKILL_RECOVERY_SECONDS / Math.max(0.25, attackSpeedMultiplier);
   }
 
@@ -430,7 +434,7 @@ public abstract class Player extends Entity implements EffectTarget {
 
   protected void cycleSignatureElement() {
     signatureElement = signatureElement.next();
-    main.AudioManager.playStaticSound("click");
+    audioBus.playSound("click", SoundCategory.UI);
     System.out.println(getClass().getSimpleName() + " element -> " + signatureElement);
   }
 
@@ -440,13 +444,13 @@ public abstract class Player extends Entity implements EffectTarget {
 
   private void selectPreviousInventoryItem() {
     selectedInventoryIndex = (selectedInventoryIndex - 1 + inventory.size()) % inventory.size();
-    main.AudioManager.playStaticSound("click");
+    audioBus.playSound("click", SoundCategory.UI);
     System.out.println(getClass().getSimpleName() + " inventory -> " + selectedInventoryItem());
   }
 
   private void selectNextInventoryItem() {
     selectedInventoryIndex = (selectedInventoryIndex + 1) % inventory.size();
-    main.AudioManager.playStaticSound("click");
+    audioBus.playSound("click", SoundCategory.UI);
     System.out.println(getClass().getSimpleName() + " inventory -> " + selectedInventoryItem());
   }
 
