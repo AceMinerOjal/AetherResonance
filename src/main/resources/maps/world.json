@@ -1,0 +1,64 @@
+{
+  "width": 10,
+  "height": 10,
+  "tilewidth": 32,
+  "tileheight": 32,
+  "orientation": "orthogonal",
+  "properties": [
+    { "name": "biome", "type": "string", "value": "plains" }
+  ],
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "tilewidth": 32,
+      "tileheight": 32,
+      "columns": 2,
+      "tilecount": 2,
+      "image": "../tilesets/basic.png",
+      "tiles": [
+        {
+          "id": 1,
+          "properties": [
+            { "name": "solid", "type": "bool", "value": true }
+          ]
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "name": "ground",
+      "type": "tilelayer",
+      "visible": true,
+      "data": [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+      ]
+    },
+    {
+      "name": "collision",
+      "type": "tilelayer",
+      "visible": true,
+      "data": [
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+      ]
+    }
+  ]
+}

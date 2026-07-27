@@ -1,6 +1,6 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" 
+<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
@@ -9,19 +9,39 @@
     <version>beta-0.1</version>
 
     <build>
-        <sourceDirectory>src</sourceDirectory>
-        <resources>
-            <resource>
-                <directory>res</directory>
-            </resource>
-        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>main.Main</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <lwjgl.version>3.3.3</lwjgl.version>
-        <lwjgl.natives>natives-linux</lwjgl.natives>
     </properties>
 
     <dependencyManagement>
@@ -37,6 +57,7 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- LWJGL core -->
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl</artifactId>
@@ -62,71 +83,138 @@
             <artifactId>lwjgl-openal</artifactId>
         </dependency>
 
+        <!-- LWJGL natives — all platforms bundled -->
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl</artifactId>
-            <classifier>${lwjgl.natives}</classifier>
+            <classifier>natives-linux</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+            <classifier>natives-windows</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+            <classifier>natives-macos</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+            <classifier>natives-macos-arm64</classifier>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-glfw</artifactId>
+            <classifier>natives-linux</classifier>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl-glfw</artifactId>
-            <classifier>${lwjgl.natives}</classifier>
+            <classifier>natives-windows</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-glfw</artifactId>
+            <classifier>natives-macos</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-glfw</artifactId>
+            <classifier>natives-macos-arm64</classifier>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+            <classifier>natives-linux</classifier>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl-shaderc</artifactId>
-            <classifier>${lwjgl.natives}</classifier>
+            <classifier>natives-windows</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+            <classifier>natives-macos</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+            <classifier>natives-macos-arm64</classifier>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <classifier>natives-linux</classifier>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl-stb</artifactId>
-            <classifier>${lwjgl.natives}</classifier>
+            <classifier>natives-windows</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <classifier>natives-macos</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <classifier>natives-macos-arm64</classifier>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-openal</artifactId>
+            <classifier>natives-linux</classifier>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl-openal</artifactId>
-            <classifier>${lwjgl.natives}</classifier>
+            <classifier>natives-windows</classifier>
             <scope>runtime</scope>
         </dependency>
-    </dependencies>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-openal</artifactId>
+            <classifier>natives-macos</classifier>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-openal</artifactId>
+            <classifier>natives-macos-arm64</classifier>
+            <scope>runtime</scope>
+        </dependency>
 
-    <profiles>
-        <profile>
-            <id>lwjgl-natives-windows</id>
-            <activation>
-                <os>
-                    <family>windows</family>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-windows</lwjgl.natives>
-            </properties>
-        </profile>
-        <profile>
-            <id>lwjgl-natives-macos</id>
-            <activation>
-                <os>
-                    <family>mac</family>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-macos</lwjgl.natives>
-            </properties>
-        </profile>
-        <profile>
-            <id>lwjgl-natives-linux</id>
-            <activation>
-                <os>
-                    <family>unix</family>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-linux</lwjgl.natives>
-            </properties>
-        </profile>
-    </profiles>
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

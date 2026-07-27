@@ -1,39 +1,21 @@
-# Java/Maven
+# Build output
 target/
 *.class
-*.jar
-*.war
-*.ear
 
-# Maven wrapper and local settings
-.mvn/
-settings-local.xml
-
-# Eclipse
-.project
-.classpath
+# IDE
 .settings/
-.metadata/
-
-# Intellij
-.idea/
+.classpath
+.project
 *.iml
+.idea/
+out/
 *.ipr
 *.iws
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 
-# Logs
+# Runtime
+saves/
 *.log
-
-# Temporary
-*.tmp
-
-# Stolen resource for testing
-*.png
-*.ogg
-
-# My maps and saves
-*.json

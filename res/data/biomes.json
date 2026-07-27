@@ -1,0 +1,156 @@
+{
+  "biomes": [
+    {
+      "id": "plains",
+      "name": "The Sapien Plains",
+      "tileset": "tilesets/basic.png",
+      "music": [
+        { "path": "audio/music/plains_theme_1.ogg", "weight": 2 },
+        { "path": "audio/music/plains_theme_2.ogg", "weight": 1 }
+      ],
+      "ambient": [
+        {
+          "path": "audio/ambient/wind_gentle.ogg",
+          "weight": 1,
+          "minInterval": 8.0,
+          "maxInterval": 15.0
+        },
+        {
+          "path": "audio/ambient/birds_meadow.ogg",
+          "weight": 2,
+          "minInterval": 10.0,
+          "maxInterval": 20.0
+        }
+      ]
+    },
+    {
+      "id": "snowy",
+      "name": "The Frozen Wastes",
+      "music": [
+        { "path": "audio/music/tundra_melancholy.ogg", "weight": 2 },
+        { "path": "audio/music/frost_mystic.ogg", "weight": 1 }
+      ],
+      "ambient": [
+        {
+          "path": "audio/ambient/blizzard_howl.ogg",
+          "weight": 3,
+          "minInterval": 5.0,
+          "maxInterval": 12.0
+        },
+        {
+          "path": "audio/ambient/ice_cracking.ogg",
+          "weight": 1,
+          "minInterval": 20.0,
+          "maxInterval": 45.0
+        }
+      ]
+    },
+    {
+      "id": "badlands",
+      "name": "The Dwarven Badlands",
+      "music": [
+        { "path": "audio/music/desert_caravan.ogg", "weight": 2 },
+        { "path": "audio/music/dwarven_forge_echo.ogg", "weight": 1 }
+      ],
+      "ambient": [
+        {
+          "path": "audio/ambient/sandstorm_whisper.ogg",
+          "weight": 2,
+          "minInterval": 10.0,
+          "maxInterval": 20.0
+        },
+        {
+          "path": "audio/ambient/canyon_echo.ogg",
+          "weight": 1,
+          "minInterval": 15.0,
+          "maxInterval": 30.0
+        }
+      ]
+    },
+    {
+      "id": "forest",
+      "name": "The Elven Forest",
+      "music": [
+        { "path": "audio/music/elven_canopy_1.ogg", "weight": 2 },
+        { "path": "audio/music/ancient_woods.ogg", "weight": 1 }
+      ],
+      "ambient": [
+        {
+          "path": "audio/ambient/dense_forest_birds.ogg",
+          "weight": 2,
+          "minInterval": 6.0,
+          "maxInterval": 15.0
+        },
+        {
+          "path": "audio/ambient/rustling_leaves.ogg",
+          "weight": 2,
+          "minInterval": 8.0,
+          "maxInterval": 18.0
+        }
+      ]
+    },
+    {
+      "id": "volcano",
+      "name": "The Draconic Dominion",
+      "music": [
+        { "path": "audio/music/draconic_march.ogg", "weight": 2 },
+        { "path": "audio/music/volcanic_tension.ogg", "weight": 1 }
+      ],
+      "ambient": [
+        {
+          "path": "audio/ambient/lava_rumble.ogg",
+          "weight": 3,
+          "minInterval": 4.0,
+          "maxInterval": 10.0
+        },
+        {
+          "path": "audio/ambient/geyser_hiss.ogg",
+          "weight": 2,
+          "minInterval": 12.0,
+          "maxInterval": 25.0
+        }
+      ]
+    },
+    {
+      "id": "cave",
+      "name": "Cave",
+      "music": [{ "path": "audio/music/cave_ambient.ogg", "weight": 3 }],
+      "ambient": [
+        {
+          "path": "audio/ambient/drip.ogg",
+          "weight": 2,
+          "minInterval": 2.0,
+          "maxInterval": 6.0
+        },
+        {
+          "path": "audio/ambient/echo.ogg",
+          "weight": 1,
+          "minInterval": 10.0,
+          "maxInterval": 20.0
+        }
+      ]
+    },
+    {
+      "id": "dungeon",
+      "name": "Dungeon",
+      "music": [
+        { "path": "audio/music/dungeon_explore.ogg", "weight": 2 },
+        { "path": "audio/music/dungeon_boss.ogg", "weight": 1 }
+      ],
+      "ambient": [
+        {
+          "path": "audio/ambient/chain.ogg",
+          "weight": 1,
+          "minInterval": 5.0,
+          "maxInterval": 12.0
+        }
+      ]
+    },
+    {
+      "id": "void",
+      "name": "The Void",
+      "music": [],
+      "ambient": []
+    }
+  ]
+}
