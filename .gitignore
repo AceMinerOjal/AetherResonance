@@ -1,11 +1,9 @@
 # Build output
-target/
+build/
+.gradle/
 *.class
 
 # IDE
-.settings/
-.classpath
-.project
 *.iml
 .idea/
 out/

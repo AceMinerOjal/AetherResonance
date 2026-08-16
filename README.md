@@ -17,7 +17,11 @@ This project was previously named `legend-java`.
 
 ## Running
 
-Build and run with your normal Java/Maven workflow.
+Run directly with the Gradle wrapper:
+
+- `./gradlew run`: launch the game
+- `./gradlew test`: run the test suite
+- `./gradlew build`: compile and package the jar into `build/libs/`
 
 ### Paths
 
